@@ -9,8 +9,6 @@ Unlike traditional insurance systems, giggity provides **automated, real-time in
 
 The platform is built to operate on a **weekly pricing model**, aligning with the earning cycles of gig workers.
 
----
-
 ## Problem Statement
 
 Platform-based delivery workers are highly vulnerable to external disruptions such as:
@@ -22,9 +20,8 @@ Platform-based delivery workers are highly vulnerable to external disruptions su
 
 These events directly reduce their working hours and income. Existing systems do not provide any structured financial protection against such losses.
 
-giggity addresses this gap by insuring **loss of income**, not physical damages or health risks.
+**giggity** addresses this gap by insuring **loss of income**, not physical damages or health risks.
 
----
 
 ## Core Principles
 
@@ -33,8 +30,6 @@ giggity addresses this gap by insuring **loss of income**, not physical damages 
 * Fully **automated parametric insurance system**
 * Built with **fraud-resistant architecture from first principles**
 * Designed for **low-friction user experience**
-
----
 
 ## System Architecture
 
@@ -46,8 +41,6 @@ giggity addresses this gap by insuring **loss of income**, not physical damages 
 4. Parametric trigger detection
 5. Fraud validation
 6. Automated payout processing
-
----
 
 ## Key Components
 
@@ -77,8 +70,6 @@ The platform divides operational areas into fine-grained geographic zones (500m�
 | Medium     | ₹30            | ₹400     |
 | High       | ₹45            | ₹500     |
 
----
-
 ### 2. Parametric Trigger Engine
 
 The system continuously monitors external signals and automatically triggers claims when conditions exceed predefined thresholds.
@@ -95,8 +86,6 @@ The system continuously monitors external signals and automatically triggers cla
 
 The system focuses on **income disruption signals**, not just environmental events.
 
----
-
 ### 3. Reality Consistency Engine (Anti-Spoofing System)
 
 To counter advanced fraud scenarios such as GPS spoofing and coordinated attacks, giggity implements a **multi-layer verification system**.
@@ -104,8 +93,6 @@ To counter advanced fraud scenarios such as GPS spoofing and coordinated attacks
 #### Core Principle:
 
 The system validates whether **user behavior aligns with real-world conditions**, rather than trusting location data alone.
-
----
 
 ## Adversarial Defense & Anti-Spoofing Strategy
 
@@ -126,8 +113,6 @@ A spoofed user:
 * Lacks physical motion noise
 * Operates under stable network conditions
 * Displays behavior inconsistent with environmental signals
-
----
 
 ### 2. Data Signals Beyond GPS
 
@@ -168,8 +153,6 @@ The system uses multi-dimensional data fusion:
 * Multiple account detection
 * Emulator detection
 
----
-
 ### 3. Advanced Fraud Scenarios Handling
 
 #### Case A: No External Disruption
@@ -194,8 +177,6 @@ Cross-layer consistency validation ensures:
 * GPS, sensor, network, and behavior must align
 * Any mismatch increases fraud score
 
----
-
 ### 4. Coordinated Attack Detection
 
 The system detects fraud rings by identifying:
@@ -211,8 +192,6 @@ The system detects fraud rings by identifying:
 * Verified users are processed normally
 * Fraudulent groups are blocked
 
----
-
 ### 5. Fraud Scoring System
 
 Each claim is assigned a fraud probability score:
@@ -222,8 +201,6 @@ Each claim is assigned a fraud probability score:
 | Low         | Full payout           |
 | Medium      | Partial payout        |
 | High        | Flag for verification |
-
----
 
 ### 6. UX Balance Strategy
 
@@ -244,8 +221,6 @@ The system is designed to minimize friction for genuine users.
 * Transparent notification
 
 No hard rejection without validation.
-
----
 
 ## Workflow
 
@@ -275,17 +250,15 @@ No hard rejection without validation.
 
 * Instant or conditional payout based on validation
 
----
-
 ## Technology Stack
 
 ### Frontend
 
-* React / React Native
+* React Native
 
 ### Backend
 
-* Django / FastAPI
+* FastAPI
 
 ### Machine Learning
 
@@ -295,7 +268,7 @@ No hard rejection without validation.
 
 ### Database
 
-* PostgreSQL
+* PostgreSQL + pgVector
 
 ### APIs
 
@@ -307,8 +280,6 @@ No hard rejection without validation.
 
 * Razorpay (test mode)
 * UPI simulation
-
----
 
 ## Dashboard Features
 
@@ -327,8 +298,6 @@ No hard rejection without validation.
 * Risk heatmaps
 * Predictive analytics
 
----
-
 ## Business Model
 
 * Weekly subscription-based premium
@@ -342,8 +311,6 @@ No hard rejection without validation.
 
 Weekly revenue: ₹300,000
 
----
-
 ## Key Differentiators
 
 * Hyperlocal AI-based pricing
@@ -352,11 +319,9 @@ Weekly revenue: ₹300,000
 * Resistant to GPS spoofing and coordinated attacks
 * Designed specifically for gig economy income protection
 
----
-
 ## Conclusion
 
-giggity transforms insurance into an automated, intelligence-driven system that protects gig workers from income volatility.
+**giggity** transforms insurance into an automated, intelligence-driven system that protects gig workers from income volatility.
 
 By combining AI risk modeling, behavioral validation, and real-time disruption detection, the platform ensures:
 
