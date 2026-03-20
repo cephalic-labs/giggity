@@ -24,7 +24,8 @@ This repository currently documents what we are going to build and how the final
 - [Target User Experience](#target-user-experience)
 - [System Blueprint](#system-blueprint)
 - [Core Components](#core-components)
-- [Planned Technology Stack](#planned-technology-stack)
+- [Adversarial Defense & Anti-Spoofing Strategy](#adversarial-defense--anti-spoofing-strategy)
+- [Technology Stack](#technology-stack)
 - [Planned Repository Structure](#planned-repository-structure)
 - [Delivery Plan](#delivery-plan)
 - [Milestones and Acceptance Criteria](#milestones-and-acceptance-criteria)
@@ -171,6 +172,49 @@ Cluster-level detection candidates:
 - Similar movement signatures across multiple accounts
 - Synchronized claim timing against the same trigger window
 - Shared device, network, or account-link indicators
+
+## Adversarial Defense & Anti-Spoofing Strategy
+
+Crisis context: 
+
+>Coordinated fraud rings using Telegram groups and GPS spoofing can drain a parametric liquidity pool if location is treated as a single source of truth.
+
+Solution approach:
+
+Our architecture already treats raw GPS as a weak signal and requires cross-signal consistency before high-confidence payouts.
+
+### 1) The Differentiation
+
+How we distinguish genuinely stranded workers from spoofing actors:
+
+- Multi-signal consistency scoring: each claim is evaluated using device, network, environmental, and behavioral evidence, not location alone.
+- Temporal realism checks: genuine disruption behavior evolves over time, while spoofing tends to show abrupt or repetitive patterns.
+- Zone-level cohort comparison: claims are benchmarked against nearby workers in the same window; isolated anomalies are down-weighted.
+- Hybrid decisioning: rules plus ML classify outcomes into likely genuine, uncertain, or likely spoofed using calibrated thresholds.
+
+### 2) The Data
+
+Data points beyond basic GPS coordinates used to detect coordinated fraud:
+
+- Device telemetry: accelerometer variance, gyroscope patterns, motion continuity, and sensor health signatures.
+- Network signals: cell-tower handoffs, ASN and IP reputation, VPN or proxy indicators, and latency jitter expected in severe weather.
+- Spatiotemporal traces: route plausibility, speed profile, stop duration, improbable jumps, and geohash transition entropy.
+- Environmental correlation: weather severity, traffic slowdown, demand contraction, and peer activity drops in the same zone.
+- Identity and graph links: device fingerprint reuse, account or payout clustering, and synchronized claim timing in suspicious cohorts.
+- Historical baseline: worker-specific route and activity history to detect sudden adversarial drift.
+
+### 3) The UX Balance
+
+How we handle flagged claims without penalizing honest workers:
+
+- Risk-tiered outcomes:
+  - Low-risk claims receive instant payout.
+  - Medium-risk claims receive partial or capped payout immediately with silent review.
+  - High-risk claims are delayed for expedited verification.
+- Weather-aware tolerance: short signal drops in bad weather are treated as expected noise, not automatic fraud.
+- Transparent status updates: users see clear claim states such as processing, partial release, or under verification.
+- Human review safeguards: no final denial from a single model output; high-risk cases route to analyst review and appeal.
+- Cluster containment: controls narrow to suspicious rings rather than freezing payouts for an entire zone.
 
 ## Technology Stack
 
