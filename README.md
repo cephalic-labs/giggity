@@ -3,11 +3,11 @@
 ### AI-Powered Parametric Income Insurance for Gig Workers
 
 [![Stage](https://img.shields.io/badge/Stage-Seed-orange.svg)]()
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688.svg)](https://fastapi.tiangolo.com)
-[![React Native](https://img.shields.io/badge/React_Native-0.74+-61dafb.svg)](https://reactnative.dev)
+[![Python](https://img.shields.io/badge/Python-3.13+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.130+-009688.svg)](https://fastapi.tiangolo.com)
+[![React Native](https://img.shields.io/badge/React_Native-0.84-61dafb.svg)](https://reactnative.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18+-blue.svg)](https://postgresql.org)
-[![pgvector](https://img.shields.io/badge/pgvector-1.0+-green.svg)](https://github.com/pgvector/pgvector)
+[![pgvector](https://img.shields.io/badge/pgvector-0.8+-green.svg)](https://github.com/pgvector/pgvector)
 
 **giggity** is an AI-driven **parametric income insurance** platform for gig workers. The goal is to detect real-world disruptions (rain, heat, AQI spikes, lockdowns), validate impact, and trigger fast payouts with minimal user friction.
 
@@ -34,7 +34,6 @@ This repository currently documents what we are going to build and how the final
 - [Observability Plan](#observability-plan)
 - [Business Model Hypothesis](#business-model-hypothesis)
 - [Roadmap](#roadmap)
-- [Contributing](#contributing)
 
 ## Current Status
 
@@ -98,7 +97,7 @@ Planned admin journey:
 
 ### High-Level Flow (Target)
 
-![hld](./docs/assets/high-level-flow.png)
+![hld](./docs/assets/high_level_flow.png)
 
 ### Planned Service Decomposition
 
