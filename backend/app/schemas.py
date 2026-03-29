@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
 from .models import (
@@ -59,7 +59,7 @@ class QuoteResponse(BaseModel):
 class TriggerEventBase(BaseModel):
     zone: str
     trigger_type: TriggerType
-    severity: float
+    severity: float = Field(gt=0)
 
 class TriggerEventCreate(TriggerEventBase):
     pass
@@ -85,12 +85,21 @@ class Claim(ClaimBase):
     class Config:
         from_attributes = True
 
+class ClaimLifecycleEvent(BaseModel):
+    claim_id: int
+    trigger_type: TriggerType
+    trigger_severity: float
+    claim_status: ClaimStatus
+    payout_status: Optional[PayoutStatus] = None
+    payout_amount: Optional[float] = None
+    created_at: datetime
+
 # --- Payments Schemas ---
 class CheckoutCreate(BaseModel):
     worker_id: int
     zone: str
-    premium_amount: float
-    cover_amount: float
+    premium_amount: float = Field(gt=0)
+    cover_amount: float = Field(gt=0)
     end_date: datetime
 
 class CheckoutSession(BaseModel):
@@ -102,6 +111,13 @@ class CheckoutSession(BaseModel):
 class PaymentConfirmRequest(BaseModel):
     checkout_id: int
     payment_success: bool = True
+
+class SeedDemoRequest(BaseModel):
+    name: str = "Demo Worker"
+    email: EmailStr = "demo.worker@giggity.dev"
+    phone: str = "+910000000000"
+    zone: str = "ZONE_A"
+    create_active_policy: bool = True
 
 class PaymentTransaction(BaseModel):
     id: int
@@ -118,6 +134,11 @@ class PaymentTransaction(BaseModel):
 
     class Config:
         from_attributes = True
+
+class SeedDemoResponse(BaseModel):
+    user: User
+    payment: Optional[PaymentTransaction] = None
+    policy: Optional[Policy] = None
 
 class PaymentConfirmResponse(BaseModel):
     transaction: PaymentTransaction

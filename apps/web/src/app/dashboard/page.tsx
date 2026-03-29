@@ -36,6 +36,17 @@ type Policy = {
 type Claim = {
   id: number;
   amount: number;
+  status: string;
+  created_at: string;
+};
+
+type ClaimLifecycleEvent = {
+  claim_id: number;
+  trigger_type: string;
+  trigger_severity: number;
+  claim_status: string;
+  payout_status: string | null;
+  payout_amount: number | null;
   created_at: string;
 };
 
@@ -58,6 +69,7 @@ export default function Dashboard() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [claimLifecycle, setClaimLifecycle] = useState<ClaimLifecycleEvent[]>([]);
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingAction, setLoadingAction] = useState<boolean>(false);
@@ -79,29 +91,32 @@ export default function Dashboard() {
     }
 
     try {
-      const [qRes, pRes, cRes, payRes, payoutRes] = await Promise.all([
+      const [qRes, pRes, cRes, lifecycleRes, payRes, payoutRes] = await Promise.all([
         fetch(
           `${API_BASE}/api/v1/policy/quote?zone=${zone}&disruption_context=${currentContext}`,
         ),
         fetch(`${API_BASE}/api/v1/policy/active/${workerId}`),
         fetch(`${API_BASE}/api/v1/claims/${workerId}`),
+        fetch(`${API_BASE}/api/v1/claims/lifecycle/${workerId}`),
         fetch(`${API_BASE}/api/v1/payments/${workerId}`),
         fetch(`${API_BASE}/api/v1/payouts/${workerId}`),
       ]);
 
-      if ([qRes, pRes, cRes, payRes, payoutRes].some((res) => !res.ok)) {
+      if ([qRes, pRes, cRes, lifecycleRes, payRes, payoutRes].some((res) => !res.ok)) {
         throw new Error("Could not load dashboard data. Check backend availability.");
       }
 
       const quoteData = (await qRes.json()) as Quote;
       const policyData = (await pRes.json()) as Policy[];
       const claimData = (await cRes.json()) as Claim[];
+      const lifecycleData = (await lifecycleRes.json()) as ClaimLifecycleEvent[];
       const paymentData = (await payRes.json()) as Payment[];
       const payoutData = (await payoutRes.json()) as Payout[];
 
       setQuote(quoteData);
       setPolicies(policyData);
       setClaims(claimData);
+      setClaimLifecycle(lifecycleData);
       setPayments(paymentData);
       setPayouts(payoutData);
       setErrorMessage(null);
@@ -364,12 +379,35 @@ export default function Dashboard() {
             <p className="text-xs uppercase tracking-[0.14em] text-black/55">Step 3</p>
             <p className="font-semibold">Auto claim and payout release</p>
             <p className="text-sm text-black/70">
-              {payouts.length > 0
-                ? `${payouts.length} payout record(s) released for this worker.`
-                : "No payout released yet"}
+              {claimLifecycle.length > 0
+                ? `${claimLifecycle.length} lifecycle event(s) recorded with explicit payout states.`
+                : "No payout lifecycle yet"}
             </p>
           </li>
         </ul>
+      </section>
+
+      <section className="surface-card p-5">
+        <h4 className="mb-3 text-xl">Pandemic Lifecycle Feed</h4>
+        <div className="space-y-2">
+          {claimLifecycle.length === 0 ? (
+            <p className="text-sm text-black/65">No lifecycle events yet.</p>
+          ) : (
+            claimLifecycle.map((event) => (
+              <div
+                key={event.claim_id}
+                className="rounded-xl border border-black/12 bg-white/80 px-3 py-2 text-sm"
+              >
+                <p className="font-semibold">
+                  Claim #{event.claim_id} | {event.trigger_type}
+                </p>
+                <p className="text-black/70">
+                  Severity {event.trigger_severity} | Claim {event.claim_status} | Payout {event.payout_status ?? "N/A"}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
@@ -384,7 +422,7 @@ export default function Dashboard() {
             ) : (
               claims.map((claim) => (
                 <div key={claim.id} className="rounded-xl border border-black/12 bg-white/80 px-3 py-2 text-sm">
-                  Claim #{claim.id} | Rs {claim.amount}
+                  Claim #{claim.id} | Rs {claim.amount} | {claim.status}
                 </div>
               ))
             )}
