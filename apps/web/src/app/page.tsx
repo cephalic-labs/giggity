@@ -74,61 +74,76 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-4 py-10 md:px-8">
-      <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
-        <section className="rise space-y-6">
-          <div className="inline-flex items-center gap-2 rounded-full border border-black/15 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em]">
-            <ShieldAlert size={14} />
-            Pandemic Basic Payment Rollout
+    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col justify-center px-4 py-10 md:px-8">
+      <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-stretch">
+        <section className="rise space-y-8">
+          <div className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white/80 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.22em]">
+            <ShieldAlert size={14} className="text-orange-700" />
+            Zero-Touch Income Insurance
           </div>
 
-          <h1 className="max-w-xl text-4xl leading-tight text-[var(--color-ink)] md:text-6xl">
-            Income cover that behaves like emergency infrastructure.
-          </h1>
+          <div className="space-y-4">
+            <h1 className="max-w-xl leading-tight text-[var(--color-ink)]">
+              Income cover that behaves like emergency infrastructure.
+            </h1>
 
-          <p className="max-w-xl text-base leading-relaxed text-black/70 md:text-lg">
-            Register once, buy weekly protection in under a minute, and let the system
-            trigger support automatically when disruptions escalate.
-          </p>
-
-          <div className="surface-card p-5">
-            <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.16em] text-black/60">
-              <span>Signal Readiness</span>
-              <span>Realtime</span>
-            </div>
-            <div className="signal-ribbon h-4">
-              <span style={{ width: "82%" }} />
-            </div>
-            <p className="mt-3 text-sm text-black/60">
-              Differentiation anchor: the live disruption ribbon stays visible through
-              onboarding and dashboard so workers always know current risk posture.
+            <p className="max-w-xl text-lg leading-relaxed text-black/70">
+              Register once, buy weekly protection in under a minute, and let the system
+              trigger support automatically when disruptions escalate.
             </p>
+          </div>
+
+          <div className="surface-card-elevated p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="metric-label">Real-time Disruption Sensor</h3>
+              <span className="metric-label">LIVE FEED</span>
+            </div>
+            <div className="signal-ribbon h-6 rounded-xl">
+              <span style={{ width: "72%" }} />
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              <div className="text-center">
+                <p className="metric-label">NORMAL</p>
+                <p className="text-sm font-semibold text-green-700">40%</p>
+              </div>
+              <div className="text-center">
+                <p className="metric-label">STRESSED</p>
+                <p className="text-sm font-semibold text-amber-700">66%</p>
+              </div>
+              <div className="text-center">
+                <p className="metric-label">CRITICAL</p>
+                <p className="text-sm font-semibold text-red-700">88%</p>
+              </div>
+            </div>
           </div>
         </section>
 
-        <section className="surface-card rise p-6 md:p-8">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-xl border border-black/10 bg-black/5 p-2">
-              <Sparkles size={18} />
+        <section className="surface-card-elevated rise p-7 md:p-8">
+          <div className="mb-6 flex items-start gap-3">
+            <div className="rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 p-2.5">
+              <Sparkles size={20} className="text-orange-700" />
             </div>
-            <h2 className="text-2xl">Start your protection profile</h2>
+            <div>
+              <h2 className="text-2xl">Start your protection profile</h2>
+              <p className="text-sm text-black/60">Takes 60 seconds</p>
+            </div>
           </div>
 
           <form onSubmit={handleStart} className="space-y-4">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium">Full name</span>
+              <span className="mb-2 block font-medium text-black/85">Full name</span>
               <input
                 value={form.name}
                 onChange={(event) =>
                   setForm((previous) => ({ ...previous, name: event.target.value }))
                 }
                 required
-                className="w-full rounded-xl border border-black/20 bg-white/80 px-4 py-3 outline-none transition focus:border-black/40"
+                className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
               />
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium">Email</span>
+              <span className="mb-2 block font-medium text-black/85">Email</span>
               <input
                 type="email"
                 value={form.email}
@@ -136,39 +151,39 @@ export default function Home() {
                   setForm((previous) => ({ ...previous, email: event.target.value }))
                 }
                 required
-                className="w-full rounded-xl border border-black/20 bg-white/80 px-4 py-3 outline-none transition focus:border-black/40"
+                className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
               />
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium">Phone</span>
+              <span className="mb-2 block font-medium text-black/85">Phone</span>
               <input
                 value={form.phone}
                 onChange={(event) =>
                   setForm((previous) => ({ ...previous, phone: event.target.value }))
                 }
                 required
-                className="w-full rounded-xl border border-black/20 bg-white/80 px-4 py-3 outline-none transition focus:border-black/40"
+                className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
               />
             </label>
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium">Active zone</span>
+              <span className="mb-2 block font-medium text-black/85">Service Zone</span>
               <select
                 value={form.currentZone}
                 onChange={(event) =>
                   setForm((previous) => ({ ...previous, currentZone: event.target.value }))
                 }
-                className="w-full rounded-xl border border-black/20 bg-white/80 px-4 py-3 outline-none transition focus:border-black/40"
+                className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
               >
-                <option value="ZONE_A">ZONE_A</option>
-                <option value="ZONE_B">ZONE_B</option>
-                <option value="ZONE_C">ZONE_C</option>
+                <option value="ZONE_A">Zone A</option>
+                <option value="ZONE_B">Zone B</option>
+                <option value="ZONE_C">Zone C</option>
               </select>
             </label>
 
             {errorMessage ? (
-              <p className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <p className="rounded-lg border border-red-300/50 bg-gradient-to-br from-red-50 to-pink-50 px-4 py-3 text-sm font-medium text-red-700">
                 {errorMessage}
               </p>
             ) : null}
@@ -176,11 +191,11 @@ export default function Home() {
             <button
               type="submit"
               disabled={loading}
-              className="accent-btn flex w-full items-center justify-center gap-2 px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-70"
+              className="accent-btn flex w-full items-center justify-center gap-2 px-5 py-3.5 text-base font-semibold disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? <Loader2 className="animate-spin" size={18} /> : null}
               Continue to Dashboard
-              <ArrowRight size={17} />
+              <ArrowRight size={18} />
             </button>
           </form>
         </section>
