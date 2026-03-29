@@ -18,6 +18,17 @@ class TriggerType(enum.Enum):
     EXTREME_HEAT = "EXTREME_HEAT"
     AQI_SPIKE = "AQI_SPIKE"
     FLASH_FLOOD = "FLASH_FLOOD"
+    PANDEMIC = "PANDEMIC"
+
+class PaymentStatus(enum.Enum):
+    PENDING = "PENDING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+
+class PayoutStatus(enum.Enum):
+    INITIATED = "INITIATED"
+    RELEASED = "RELEASED"
+    FAILED = "FAILED"
 
 class User(Base):
     __tablename__ = "users"
@@ -30,6 +41,7 @@ class User(Base):
     joined_at = Column(DateTime, default=datetime.utcnow)
 
     policies = relationship("Policy", back_populates="worker")
+    payments = relationship("PaymentTransaction", back_populates="worker")
 
 class Policy(Base):
     __tablename__ = "policies"
@@ -45,6 +57,7 @@ class Policy(Base):
 
     worker = relationship("User", back_populates="policies")
     claims = relationship("Claim", back_populates="policy")
+    payment = relationship("PaymentTransaction", back_populates="policy", uselist=False)
 
 class TriggerEvent(Base):
     __tablename__ = "trigger_events"
@@ -67,3 +80,36 @@ class Claim(Base):
 
     policy = relationship("Policy", back_populates="claims")
     trigger_event = relationship("TriggerEvent")
+    payouts = relationship("PayoutLedger", back_populates="claim")
+
+class PaymentTransaction(Base):
+    __tablename__ = "payment_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    worker_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    policy_id = Column(Integer, ForeignKey("policies.id"), nullable=True)
+    zone = Column(String, index=True)
+    premium_amount = Column(Float, nullable=False)
+    cover_amount = Column(Float, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    provider_ref = Column(String, unique=True, index=True)
+    status = Column(SQLEnum(PaymentStatus), default=PaymentStatus.PENDING)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    worker = relationship("User", back_populates="payments")
+    policy = relationship("Policy", back_populates="payment")
+
+class PayoutLedger(Base):
+    __tablename__ = "payout_ledger"
+
+    id = Column(Integer, primary_key=True, index=True)
+    claim_id = Column(Integer, ForeignKey("claims.id"), nullable=False)
+    policy_id = Column(Integer, ForeignKey("policies.id"), nullable=False)
+    worker_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    status = Column(SQLEnum(PayoutStatus), default=PayoutStatus.INITIATED)
+    provider_ref = Column(String, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    claim = relationship("Claim", back_populates="payouts")

@@ -3,277 +3,425 @@
 import { useEffect, useState } from "react";
 import {
   BadgeCheck,
-  MapPin,
-  Wallet,
-  CloudLightning,
-  Activity,
+  CreditCard,
+  Landmark,
+  Loader2,
   AlertTriangle,
+  ArrowLeft,
   LogOut,
-  RefreshCw,
-  Gift,
+  ShieldAlert,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+
+const API_BASE = "http://localhost:8000";
+
+type Quote = {
+  zone: string;
+  recommended_premium: number;
+  cover_amount: number;
+  risk_level: string;
+  disruption_context: string;
+  factors: {
+    pricing_multiplier: number;
+  };
+};
+
+type Policy = {
+  id: number;
+  cover_amount: number;
+  status: string;
+};
+
+type Claim = {
+  id: number;
+  amount: number;
+  created_at: string;
+};
+
+type Payout = {
+  id: number;
+  amount: number;
+  status: string;
+  created_at: string;
+};
+
+type Payment = {
+  id: number;
+  status: string;
+  premium_amount: number;
+  provider_ref: string;
+};
 
 export default function Dashboard() {
   const router = useRouter();
-  const [quote, setQuote] = useState<any>(null);
-  const [policies, setPolicies] = useState<any[]>([]);
-  const [claims, setClaims] = useState<any[]>([]);
-  const [loadingAction, setLoadingAction] = useState(false);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loadingAction, setLoadingAction] = useState<boolean>(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [disruptionContext, setDisruptionContext] = useState("PANDEMIC");
 
-  // App initialization
-  const fetchDashboardData = async () => {
-    const userId = localStorage.getItem("giggity_user_id");
-    const zone = localStorage.getItem("giggity_zone") || "ZONE_A";
-    if (!userId) {
+  const workerId = typeof window !== "undefined" ? localStorage.getItem("giggity_user_id") : null;
+  const workerName =
+    typeof window !== "undefined"
+      ? localStorage.getItem("giggity_worker_name") ?? "Worker"
+      : "Worker";
+  const zone = typeof window !== "undefined" ? localStorage.getItem("giggity_zone") || "ZONE_A" : "ZONE_A";
+
+  const fetchDashboardData = async (currentContext: string) => {
+    if (!workerId) {
       router.push("/");
       return;
     }
 
     try {
-      // Fetch Quote
-      const qRes = await fetch(
-        `http://localhost:8000/api/v1/policy/quote?zone=${zone}`,
-      );
-      setQuote(await qRes.json());
+      const [qRes, pRes, cRes, payRes, payoutRes] = await Promise.all([
+        fetch(
+          `${API_BASE}/api/v1/policy/quote?zone=${zone}&disruption_context=${currentContext}`,
+        ),
+        fetch(`${API_BASE}/api/v1/policy/active/${workerId}`),
+        fetch(`${API_BASE}/api/v1/claims/${workerId}`),
+        fetch(`${API_BASE}/api/v1/payments/${workerId}`),
+        fetch(`${API_BASE}/api/v1/payouts/${workerId}`),
+      ]);
 
-      // Fetch Active Policies
-      const pRes = await fetch(
-        `http://localhost:8000/api/v1/policy/active/${userId}`,
-      );
-      setPolicies(await pRes.json());
+      if ([qRes, pRes, cRes, payRes, payoutRes].some((res) => !res.ok)) {
+        throw new Error("Could not load dashboard data. Check backend availability.");
+      }
 
-      // Fetch user claims
-      const cRes = await fetch(`http://localhost:8000/api/v1/claims/${userId}`);
-      setClaims(await cRes.json());
+      const quoteData = (await qRes.json()) as Quote;
+      const policyData = (await pRes.json()) as Policy[];
+      const claimData = (await cRes.json()) as Claim[];
+      const paymentData = (await payRes.json()) as Payment[];
+      const payoutData = (await payoutRes.json()) as Payout[];
+
+      setQuote(quoteData);
+      setPolicies(policyData);
+      setClaims(claimData);
+      setPayments(paymentData);
+      setPayouts(payoutData);
+      setErrorMessage(null);
     } catch (e) {
-      console.error("Fetch error:", e);
+      setErrorMessage(
+        e instanceof Error ? e.message : "Something went wrong while loading data.",
+      );
+    } finally {
+      setIsInitialLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDashboardData();
-    // Simulate web socket refresh every 5s for the demo
-    const interval = setInterval(() => fetchDashboardData(), 5000);
+    fetchDashboardData(disruptionContext);
+    const interval = setInterval(() => fetchDashboardData(disruptionContext), 8000);
     return () => clearInterval(interval);
-  }, [router]);
+  }, [router, disruptionContext]);
 
-  const handleBuyPolicy = async () => {
+  const handleCheckoutAndConfirm = async () => {
+    if (!workerId || !quote) {
+      return;
+    }
+
     setLoadingAction(true);
-    const userId = localStorage.getItem("giggity_user_id");
-    const zone = localStorage.getItem("giggity_zone") || "ZONE_A";
 
-    // end_date logic 1 week from now
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 7);
 
     try {
-      await fetch("http://localhost:8000/api/v1/policy/create", {
+      const checkoutRes = await fetch(`${API_BASE}/api/v1/payments/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          worker_id: parseInt(userId!),
+          worker_id: Number(workerId),
           zone: zone,
-          premium_amount: quote?.recommended_premium || 25,
-          cover_amount: quote?.cover_amount || 500,
+          premium_amount: quote.recommended_premium,
+          cover_amount: quote.cover_amount,
           end_date: endDate.toISOString(),
         }),
       });
-      await fetchDashboardData();
+
+      if (!checkoutRes.ok) {
+        throw new Error("Unable to initiate payment checkout.");
+      }
+
+      const checkout = (await checkoutRes.json()) as { checkout_id: number };
+
+      const confirmRes = await fetch(`${API_BASE}/api/v1/payments/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkout_id: checkout.checkout_id,
+          payment_success: true,
+        }),
+      });
+
+      if (!confirmRes.ok) {
+        throw new Error("Payment confirmation failed.");
+      }
+
+      await fetchDashboardData(disruptionContext);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to complete payment rollout.",
+      );
     } finally {
       setLoadingAction(false);
     }
   };
 
-  // ADMIN Simulation Tool
-  const handleTriggerDisruption = async () => {
+  const handleTriggerPandemic = async () => {
+    if (!workerId) {
+      return;
+    }
+
     setLoadingAction(true);
-    const zone = localStorage.getItem("giggity_zone") || "ZONE_A";
 
     try {
-      await fetch("http://localhost:8000/api/v1/admin/triggers", {
+      const triggerRes = await fetch(`${API_BASE}/api/v1/admin/triggers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           zone: zone,
-          trigger_type: "HEAVY_RAIN",
-          severity: 85.0, // mm of rain
+          trigger_type: "PANDEMIC",
+          severity: 0.9,
         }),
       });
-      // Give backend brief time to process zero-touch
-      setTimeout(() => fetchDashboardData(), 1000);
+
+      if (!triggerRes.ok) {
+        throw new Error("Unable to trigger pandemic simulation.");
+      }
+
+      setTimeout(() => fetchDashboardData(disruptionContext), 700);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to run simulation.",
+      );
     } finally {
       setLoadingAction(false);
     }
   };
 
   const hasActivePolicy = policies.length > 0;
+  const latestPayment = payments[0];
+
+  if (isInitialLoading) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center px-4">
+        <div className="surface-card flex items-center gap-3 px-6 py-4 text-sm">
+          <Loader2 className="animate-spin" size={18} />
+          Loading worker protection board...
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <div className="min-h-screen p-4 md:p-8 max-w-2xl mx-auto space-y-6 pb-24">
-      {/* Header */}
-      <header className="flex items-center justify-between mb-8">
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-8 md:px-8">
+      <header className="surface-card rise flex items-center justify-between p-4 md:p-5">
         <div>
-          <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">
-            giggity
-          </h1>
-          <p className="text-sm text-zinc-400">
-            Worker ID: #
-            {typeof window !== "undefined"
-              ? localStorage.getItem("giggity_user_id")
-              : "-"}
+          <p className="text-xs uppercase tracking-[0.18em] text-black/55">
+            Worker Protection Command
+          </p>
+          <h1 className="text-3xl">giggity</h1>
+          <p className="text-sm text-black/65">
+            {workerName} | Worker #{workerId ?? "-"} | {zone}
           </p>
         </div>
-        <button
-          onClick={() => {
-            localStorage.clear();
-            router.push("/");
-          }}
-          className="p-2 bg-zinc-800/50 rounded-full hover:bg-zinc-800 transition"
-        >
-          <LogOut size={18} />
-        </button>
-      </header>
 
-      {/* Main Protection Card */}
-      <motion.div
-        layout
-        className="glass-panel p-6 relative overflow-hidden group"
-      >
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-2xl rounded-full -translate-y-1/2 translate-x-1/2"></div>
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center gap-2">
-            <MapPin className="text-blue-400" size={20} />
-            <span className="font-semibold text-zinc-200">
-              Current Zone: {quote?.zone || "Loading"}
-            </span>
-          </div>
-          {quote?.risk_level === "High" ? (
-            <span className="text-xs px-2 py-1 bg-red-500/20 text-red-300 rounded-full font-medium border border-red-500/20">
-              High Risk
-            </span>
-          ) : (
-            <span className="text-xs px-2 py-1 bg-green-500/20 text-green-300 rounded-full font-medium border border-green-500/20">
-              Normal
-            </span>
-          )}
-        </div>
-
-        {hasActivePolicy ? (
-          <div className="mt-6 flex flex-col items-center justify-center p-6 bg-blue-900/20 rounded-xl border border-blue-500/30">
-            <BadgeCheck className="w-12 h-12 text-blue-400 mb-3" />
-            <h3 className="text-lg font-bold text-white mb-1">Protected</h3>
-            <p className="text-sm text-blue-200/80 text-center">
-              Your income is secure. You will automatically receive ₹
-              {policies[0].cover_amount} if a disruption occurs.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-6">
-            <div className="flex items-end justify-between mb-4">
-              <div>
-                <p className="text-zinc-400 text-sm mb-1">
-                  Weekly Premium (ML Priced)
-                </p>
-                <div className="text-3xl font-bold text-white flex items-center gap-1">
-                  ₹{quote?.recommended_premium || "--"}
-                  <span className="text-sm font-normal text-zinc-500 ml-1">
-                    / wk
-                  </span>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-zinc-400 text-sm mb-1">Coverage</p>
-                <p className="text-lg font-semibold text-green-400">
-                  ₹{quote?.cover_amount || "--"}
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={handleBuyPolicy}
-              disabled={loadingAction || !quote}
-              className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50"
-            >
-              Buy Weekly Protection
-            </button>
-          </div>
-        )}
-      </motion.div>
-
-      {/* Claims Visualizer (Zero Touch Highlight) */}
-      <AnimatePresence>
-        {claims.map((claim) => (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            key={claim.id}
-            className="p-5 rounded-xl border border-emerald-500/30 bg-emerald-900/20 flex flex-col items-start relative overflow-hidden"
-          >
-            <div className="absolute right-0 bottom-0 w-24 h-24 bg-emerald-500/10 blur-2xl rounded-full"></div>
-            <div className="flex items-center gap-3 w-full mb-2">
-              <div className="bg-emerald-500/20 p-2 rounded-lg text-emerald-400">
-                <Gift size={20} />
-              </div>
-              <div className="flex-1">
-                <h4 className="font-semibold text-emerald-300">
-                  Auto-Payout Processed!
-                </h4>
-                <p className="text-xs text-emerald-200/70">
-                  Seamless zero-touch claim
-                </p>
-              </div>
-              <div className="text-right">
-                <span className="text-lg font-bold text-white">
-                  ₹{claim.amount}
-                </span>
-              </div>
-            </div>
-            <p className="text-xs text-zinc-400 mt-2">
-              Triggered automatically via weather sensors. The money is on the
-              way to your linked account.
-            </p>
-          </motion.div>
-        ))}
-      </AnimatePresence>
-
-      <div className="mt-8 border-t border-zinc-800 pt-6">
-        <h4 className="text-xs font-bold text-zinc-500 tracking-widest uppercase mb-4 flex items-center gap-2">
-          <Activity size={14} /> Admin / Demo Actions
-        </h4>
-
-        <div className="grid grid-cols-1 gap-3">
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleTriggerDisruption}
-            disabled={loadingAction || !hasActivePolicy}
-            className="bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 p-4 rounded-xl flex items-center justify-between transition group disabled:opacity-50"
+            onClick={() => router.push("/")}
+            className="rounded-xl border border-black/15 bg-white/75 px-3 py-2 text-sm font-medium"
           >
-            <div className="flex items-center gap-3">
-              <div className="bg-red-500/20 text-red-400 p-2 rounded-lg">
-                <AlertTriangle size={18} />
-              </div>
-              <div className="text-left">
-                <p className="font-medium text-white text-sm">
-                  Simulate Heavy Rain
-                </p>
-                <p className="text-xs text-zinc-400">
-                  Triggers Oracle & Claims Engine
-                </p>
-              </div>
-            </div>
-            <RefreshCw
-              size={16}
-              className="text-zinc-500 group-hover:rotate-180 transition duration-700"
-            />
+            <span className="inline-flex items-center gap-2">
+              <ArrowLeft size={16} />
+              Edit Profile
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              localStorage.clear();
+              router.push("/");
+            }}
+            className="rounded-xl border border-black/15 bg-white/75 p-2"
+            aria-label="Log out"
+          >
+            <LogOut size={18} />
           </button>
         </div>
-        <p className="text-[10px] text-zinc-600 mt-4 text-center">
-          MVP Demo Platform - The trigger simulation automatically calls
-          public/mock API logic and dispatches real-time payouts directly
-          without a claims agent.
-        </p>
-      </div>
-    </div>
+      </header>
+
+      <section className="surface-card rise p-5 md:p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-black/55">
+              Disruption Context
+            </p>
+            <h2 className="text-2xl">Weekly Payment Rollout</h2>
+          </div>
+          <select
+            value={disruptionContext}
+            onChange={(event) => setDisruptionContext(event.target.value)}
+            className="rounded-xl border border-black/20 bg-white px-4 py-2 text-sm"
+          >
+            <option value="NORMAL">NORMAL</option>
+            <option value="SEVERE_WEATHER">SEVERE_WEATHER</option>
+            <option value="PANDEMIC">PANDEMIC</option>
+          </select>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <article className="rounded-2xl border border-black/15 bg-white/90 p-4">
+            <p className="text-xs uppercase tracking-[0.15em] text-black/55">Premium</p>
+            <p className="mt-1 text-4xl font-semibold">Rs {quote?.recommended_premium ?? "--"}</p>
+            <p className="mt-2 text-sm text-black/65">
+              Multiplier {quote?.factors?.pricing_multiplier ?? "--"}x under {quote?.disruption_context}
+            </p>
+          </article>
+
+          <article className="rounded-2xl border border-black/15 bg-white/90 p-4">
+            <p className="text-xs uppercase tracking-[0.15em] text-black/55">Coverage</p>
+            <p className="mt-1 text-4xl font-semibold">Rs {quote?.cover_amount ?? "--"}</p>
+            <p className="mt-2 text-sm text-black/65">Risk band: {quote?.risk_level ?? "--"}</p>
+          </article>
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.14em] text-black/55">
+            <span>Disruption ribbon</span>
+            <span>{quote?.disruption_context ?? "--"}</span>
+          </div>
+          <div className="signal-ribbon h-5">
+            <span
+              style={{
+                width:
+                  disruptionContext === "PANDEMIC"
+                    ? "88%"
+                    : disruptionContext === "SEVERE_WEATHER"
+                      ? "66%"
+                      : "40%",
+              }}
+            />
+          </div>
+        </div>
+
+        {!hasActivePolicy ? (
+          <button
+            onClick={handleCheckoutAndConfirm}
+            disabled={loadingAction || !quote}
+            className="accent-btn mt-6 flex w-full items-center justify-center gap-2 px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {loadingAction ? <Loader2 className="animate-spin" size={18} /> : <CreditCard size={18} />}
+            Run Basic Payment Rollout
+          </button>
+        ) : (
+          <div className="mt-6 rounded-2xl border border-emerald-600/35 bg-emerald-50 p-4">
+            <div className="mb-2 flex items-center gap-2 text-emerald-700">
+              <BadgeCheck size={18} />
+              <p className="text-sm font-semibold uppercase tracking-[0.14em]">
+                Policy Active
+              </p>
+            </div>
+            <p className="text-sm text-emerald-900/80">
+              Your weekly cover is live. Claims now move through automatic payout routing.
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section className="surface-card rise p-5 md:p-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-2xl">Rollout Timeline</h3>
+          <button
+            onClick={handleTriggerPandemic}
+            disabled={loadingAction || !hasActivePolicy}
+            className="rounded-xl border border-black/20 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-50"
+          >
+            Simulate Pandemic Trigger
+          </button>
+        </div>
+
+        <ul className="space-y-3">
+          <li className="rounded-xl border border-black/15 bg-white/80 p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-black/55">Step 1</p>
+            <p className="font-semibold">Quote generated with disruption context</p>
+            <p className="text-sm text-black/70">{quote?.disruption_context} and zone {quote?.zone}</p>
+          </li>
+          <li className="rounded-xl border border-black/15 bg-white/80 p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-black/55">Step 2</p>
+            <p className="font-semibold">Payment gateway simulation</p>
+            <p className="text-sm text-black/70">
+              {latestPayment
+                ? `Latest transaction ${latestPayment.provider_ref} is ${latestPayment.status}`
+                : "No payment attempt yet"}
+            </p>
+          </li>
+          <li className="rounded-xl border border-black/15 bg-white/80 p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-black/55">Step 3</p>
+            <p className="font-semibold">Auto claim and payout release</p>
+            <p className="text-sm text-black/70">
+              {payouts.length > 0
+                ? `${payouts.length} payout record(s) released for this worker.`
+                : "No payout released yet"}
+            </p>
+          </li>
+        </ul>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2">
+        <article className="surface-card p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Landmark size={16} />
+            <h4 className="text-xl">Claims</h4>
+          </div>
+          <div className="space-y-2">
+            {claims.length === 0 ? (
+              <p className="text-sm text-black/65">No claims yet.</p>
+            ) : (
+              claims.map((claim) => (
+                <div key={claim.id} className="rounded-xl border border-black/12 bg-white/80 px-3 py-2 text-sm">
+                  Claim #{claim.id} | Rs {claim.amount}
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="surface-card p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <ShieldAlert size={16} />
+            <h4 className="text-xl">Payouts</h4>
+          </div>
+          <div className="space-y-2">
+            {payouts.length === 0 ? (
+              <p className="text-sm text-black/65">No payouts yet.</p>
+            ) : (
+              payouts.map((payout) => (
+                <div key={payout.id} className="rounded-xl border border-black/12 bg-white/80 px-3 py-2 text-sm">
+                  Rs {payout.amount} | {payout.status}
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+      </section>
+
+      <AnimatePresence>
+        {errorMessage ? (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="surface-card rounded-2xl border-red-300 bg-red-50 p-4"
+          >
+            <p className="text-sm font-medium text-red-700">{errorMessage}</p>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </main>
   );
 }

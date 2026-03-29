@@ -1,5 +1,18 @@
 import type { Metadata } from "next";
+import { Bodoni_Moda, Manrope } from "next/font/google";
 import "./globals.css";
+
+const displayFont = Bodoni_Moda({
+  subsets: ["latin"],
+  variable: "--font-display",
+  weight: ["500", "700"],
+});
+
+const bodyFont = Manrope({
+  subsets: ["latin"],
+  variable: "--font-body",
+  weight: ["400", "500", "700"],
+});
 
 export const metadata: Metadata = {
   title: "Giggity | Worker Protection",
@@ -12,9 +25,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="antialiased min-h-screen bg-[#09090b] text-zinc-50 selection:bg-blue-500/30">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-[#09090b] to-[#09090b] -z-10" />
+    <html lang="en">
+      <body
+        className={`${displayFont.variable} ${bodyFont.variable} app-shell min-h-screen antialiased`}
+      >
         {children}
       </body>
     </html>
