@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from . import models, schemas
@@ -113,7 +113,11 @@ def create_checkout_session(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if payload.end_date <= datetime.utcnow():
+    normalized_end_date = payload.end_date
+    if normalized_end_date.tzinfo is not None:
+        normalized_end_date = normalized_end_date.astimezone(timezone.utc).replace(tzinfo=None)
+
+    if normalized_end_date <= datetime.utcnow():
         raise HTTPException(status_code=400, detail="end_date must be in the future")
 
     has_active_policy = (
@@ -151,7 +155,7 @@ def create_checkout_session(
         zone=payload.zone,
         premium_amount=payload.premium_amount,
         cover_amount=payload.cover_amount,
-        end_date=payload.end_date,
+        end_date=normalized_end_date,
         provider_ref=provider_ref,
         status=models.PaymentStatus.PENDING,
     )
