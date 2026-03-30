@@ -446,4 +446,81 @@ Scale hypothesis:
 
 This README intentionally describes the intended product and implementation path. Operational runbooks, deploy commands, and test execution instructions will be added once implementation exists.
 
+## Current MVP Runbook (Implemented)
+
+The repository now includes a working MVP for:
+
+- Worker onboarding
+- Pandemic-aware quote pricing
+- Payment checkout and confirmation simulation
+- Policy activation after successful payment
+- Trigger simulation with automated claim and payout lifecycle
+
+### Local Setup
+
+Backend:
+
+```bash
+cd backend
+pip install -e .
+uvicorn app.main:app --reload --port 8000
+```
+
+Frontend:
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+Open:
+
+- Frontend: http://localhost:3000
+- Backend docs: http://localhost:8000/docs
+
+### Seed Demo Worker
+
+You can create a ready-to-test worker profile and active policy:
+
+- `POST /api/v1/admin/seed-demo`
+
+Sample payload:
+
+```json
+{
+  "name": "Demo Worker",
+  "email": "demo.worker@giggity.dev",
+  "phone": "+910000000000",
+  "zone": "ZONE_A",
+  "create_active_policy": true
+}
+```
+
+### End-to-End MVP Validation
+
+1. Register or seed a worker.
+2. Fetch quote with pandemic context:
+  - `GET /api/v1/policy/quote?zone=ZONE_A&disruption_context=PANDEMIC`
+3. Run payment flow:
+  - `POST /api/v1/payments/checkout`
+  - `POST /api/v1/payments/confirm`
+4. Verify active policy:
+  - `GET /api/v1/policy/active/{user_id}`
+5. Simulate pandemic trigger:
+  - `POST /api/v1/admin/triggers` with `trigger_type=PANDEMIC`
+6. Verify lifecycle and payouts:
+  - `GET /api/v1/claims/lifecycle/{user_id}`
+  - `GET /api/v1/payouts/{user_id}`
+
+### Current MVP API Additions
+
+- `GET /health`
+- `POST /api/v1/payments/checkout`
+- `POST /api/v1/payments/confirm`
+- `GET /api/v1/payments/{user_id}`
+- `POST /api/v1/admin/seed-demo`
+- `GET /api/v1/claims/lifecycle/{user_id}`
+- `GET /api/v1/payouts/{user_id}`
+
 ---
