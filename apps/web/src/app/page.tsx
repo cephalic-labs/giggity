@@ -1,521 +1,356 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import {
-  ArrowRight,
-  Eye,
-  EyeOff,
-  Loader2,
-  ShieldAlert,
-  Sparkles,
+import { motion, useScroll, useTransform, useInView } from "framer-motion";
+import { useRef, useEffect, useState } from "react";
+import Link from "next/link";
+import { 
+  CloudRain, 
+  Thermometer, 
+  Wind, 
+  Lock, 
+  Gavel, 
+  Check, 
+  ArrowRight 
 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+// --- Components ---
 
-type AuthMode = "chooser" | "register" | "login";
-
-type RegisterForm = {
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-  confirmPassword: string;
-  currentZone: string;
-};
-
-type LoginForm = {
-  email: string;
-  password: string;
-};
-
-export default function Home() {
-  const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>("chooser");
-  const [registerForm, setRegisterForm] = useState<RegisterForm>({
-    name: "",
-    email: "",
-    phone: "",
-    password: "",
-    confirmPassword: "",
-    currentZone: "ZONE_A",
-  });
-  const [loginForm, setLoginForm] = useState<LoginForm>({
-    email: "",
-    password: "",
-  });
-  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  const confirmMatches =
-    registerForm.confirmPassword.length > 0 &&
-    registerForm.password === registerForm.confirmPassword;
-  const confirmMismatch =
-    registerForm.confirmPassword.length > 0 &&
-    registerForm.password !== registerForm.confirmPassword;
-
-  const persistAuthContext = async (
-    accessToken: string,
-    refreshToken: string,
-  ) => {
-    const meRes = await fetch(`${API_BASE}/api/v1/auth/me`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-    if (!meRes.ok) {
-      throw new Error("Unable to load your worker profile.");
-    }
-
-    const me = (await meRes.json()) as { user_id: number; role: string; email: string };
-    const userRes = await fetch(`${API_BASE}/api/v1/users/${me.user_id}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-    if (!userRes.ok) {
-      throw new Error("Unable to load account details.");
-    }
-
-    const user = (await userRes.json()) as { name: string; current_zone: string };
-
-    localStorage.setItem("giggity_access_token", accessToken);
-    localStorage.setItem("giggity_refresh_token", refreshToken);
-    localStorage.setItem("giggity_user_id", me.user_id.toString());
-    localStorage.setItem("giggity_role", me.role);
-    localStorage.setItem("giggity_zone", user.current_zone);
-    localStorage.setItem("giggity_worker_name", user.name);
-  };
-
-  const signIn = async (email: string, password: string) => {
-    const tokenRes = await fetch(`${API_BASE}/api/v1/auth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: email.trim(),
-        password,
-      }),
-    });
-
-    if (!tokenRes.ok) {
-      throw new Error("Invalid email or password.");
-    }
-
-    const tokenData = (await tokenRes.json()) as {
-      access_token: string;
-      refresh_token: string;
-    };
-
-    await persistAuthContext(tokenData.access_token, tokenData.refresh_token);
-  };
-
-  const handleRegister = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    if (registerForm.password !== registerForm.confirmPassword) {
-      setErrorMessage("Password and confirm password do not match.");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const userRes = await fetch(`${API_BASE}/api/v1/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: registerForm.name.trim(),
-          email: registerForm.email.trim(),
-          phone: registerForm.phone.trim(),
-          password: registerForm.password,
-          current_zone: registerForm.currentZone,
-        }),
-      });
-
-      if (userRes.status === 409) {
-        setErrorMessage("Email already registered. Please sign in.");
-        setMode("login");
-        setLoginForm((previous) => ({
-          ...previous,
-          email: registerForm.email.trim(),
-        }));
-        return;
-      }
-
-      if (!userRes.ok) {
-        throw new Error("Unable to register worker profile right now.");
-      }
-
-      await signIn(registerForm.email, registerForm.password);
-      router.push("/dashboard");
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Something went wrong. Try again.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    setLoading(true);
-
-    try {
-      await signIn(loginForm.email, loginForm.password);
-      router.push("/dashboard");
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Something went wrong. Try again.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const switchMode = (nextMode: AuthMode) => {
-    setMode(nextMode);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    if (nextMode === "register") {
-      setSuccessMessage("Create your account to activate weekly protection.");
-    }
-  };
+const Reveal = ({ children, className = "", delay = 0 }: { children: React.ReactNode, className?: string, delay?: number }) => {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: "-100px" });
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col justify-center px-4 py-10 md:px-8">
-      <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-stretch">
-        <section className="rise space-y-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white/80 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.22em]">
-            <ShieldAlert size={14} className="text-orange-700" />
-            Zero-Touch Income Insurance
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 20 }}
+      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+      transition={{ duration: 0.8, delay, ease: [0.16, 1, 0.3, 1] }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+};
+
+const StatCounter = ({ target, suffix = "", prefix = "", decimals = 0 }: { target: number, suffix?: string, prefix?: string, decimals?: number }) => {
+  const [count, setCount] = useState(0);
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true });
+
+  useEffect(() => {
+    if (isInView) {
+      let start = 0;
+      const end = target;
+      const duration = 2000;
+      const startTime = performance.now();
+
+      const animate = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const easedProgress = 1 - Math.pow(1 - progress, 4); // Quart ease out
+        const current = start + (end - start) * easedProgress;
+        
+        setCount(current);
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        }
+      };
+      requestAnimationFrame(animate);
+    }
+  }, [isInView, target]);
+
+  return (
+    <span ref={ref} className="font-mono">
+      {prefix}{count.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}{suffix}
+    </span>
+  );
+};
+
+// --- Sections ---
+
+export default function LandingPage() {
+  return (
+    <div className="bg-[#F4F4F0] text-[#1A1A1A] font-body selection:bg-[#C0392B] selection:text-white">
+      {/* Navigation */}
+      <header className="bg-[#F4F4F0] border-b border-[#1A1A1A] sticky top-0 z-50">
+        <div className="flex justify-between items-center w-full px-6 md:px-12 py-6 max-w-[1080px] mx-auto">
+          <div className="text-3xl font-serif font-black tracking-tighter">Giggity</div>
+          <nav className="hidden md:flex gap-12 items-center">
+            <Link href="#" className="font-mono uppercase text-xs tracking-widest hover:text-[#C0392B] transition-colors">Protocol</Link>
+            <Link href="#" className="text-[#C0392B] border-b border-[#C0392B] pb-1 font-mono uppercase text-xs tracking-widest">Claims</Link>
+            <Link href="#" className="font-mono uppercase text-xs tracking-widest hover:text-[#C0392B] transition-colors">Network</Link>
+          </nav>
+          <Link href="/signup">
+            <Button size="sm">Get Protected</Button>
+          </Link>
+        </div>
+      </header>
+
+      <main className="max-w-[1080px] mx-auto px-6 md:px-12 overflow-x-hidden">
+        {/* Hero */}
+        <section className="py-20 md:py-32 grid grid-cols-1 md:grid-cols-12 gap-8 items-center border-b border-[#1A1A1A]/10">
+          <div className="col-span-1 md:col-span-7">
+            <Reveal>
+              <h1 className="text-4xl md:text-[72px] font-serif font-black leading-[1.05] tracking-tighter mb-8">
+                When it rains, you shouldn't <span className="italic text-[#C0392B]">lose.</span>
+              </h1>
+            </Reveal>
+            <Reveal delay={0.2}>
+              <p className="text-xl text-[#1A1A1A]/80 max-w-md leading-relaxed mb-12">
+                Giggity detects heat, rain, AQI spikes, and lockdowns in real time. When your zone is disrupted, you're paid automatically. No claims. No forms. No waiting.
+              </p>
+            </Reveal>
+            <Reveal delay={0.4} className="flex flex-col sm:flex-row gap-6 md:gap-8 items-center">
+              <Link href="/signup" className="w-full sm:w-auto">
+                <Button size="lg" className="w-full sm:w-auto">Start Protection</Button>
+              </Link>
+              <Link href="#" className="font-mono text-xs uppercase tracking-widest underline decoration-[#C0392B] decoration-1 underline-offset-8 hover:text-[#C0392B] transition-colors">
+                How it works
+              </Link>
+            </Reveal>
           </div>
-
-          <div className="space-y-4">
-            <h1 className="max-w-xl leading-tight text-[var(--color-ink)]">
-              Income cover that behaves like emergency infrastructure.
-            </h1>
-
-            <p className="max-w-xl text-lg leading-relaxed text-black/70">
-              Register once, buy weekly protection in under a minute, and let the system
-              trigger support automatically when disruptions escalate.
-            </p>
-          </div>
-
-          <div className="surface-card-elevated p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="metric-label">Real-time Disruption Sensor</h3>
-              <span className="metric-label">LIVE FEED</span>
-            </div>
-            <div className="signal-ribbon h-6 rounded-xl">
-              <span style={{ width: "72%" }} />
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-3">
-              <div className="text-center">
-                <p className="metric-label">NORMAL</p>
-                <p className="text-sm font-semibold text-green-700">40%</p>
-              </div>
-              <div className="text-center">
-                <p className="metric-label">STRESSED</p>
-                <p className="text-sm font-semibold text-amber-700">66%</p>
-              </div>
-              <div className="text-center">
-                <p className="metric-label">CRITICAL</p>
-                <p className="text-sm font-semibold text-red-700">88%</p>
-              </div>
+          
+          <div className="col-span-1 md:col-span-5 relative h-[400px] flex items-center justify-center mt-12 md:mt-0">
+            <div className="grid grid-cols-2 gap-4 -rotate-3">
+              {[
+                { icon: <CloudRain className="text-[#C0392B]" />, label: "Precipitation", value: "Rain", dark: false },
+                { icon: <Thermometer className="text-[#C0392B]" />, label: "Threshold", value: "Temp", dark: true },
+                { icon: <Wind className="text-[#C0392B]" />, label: "Atmosphere", value: "AQI", dark: false },
+                { icon: <Lock className="text-[#C0392B]" />, label: "Restriction", value: "Lockdown", dark: false },
+              ].map((card, i) => (
+                <motion.div
+                  key={i}
+                  animate={{ 
+                    y: [0, -15, 0],
+                    rotate: i % 2 === 0 ? [-3, -1, -3] : [-3, -5, -3]
+                  }}
+                  transition={{ 
+                    duration: 6, 
+                    repeat: Infinity, 
+                    delay: i * 1.5,
+                    ease: "easeInOut" 
+                  }}
+                  className={`border border-[#1A1A1A] p-6 w-40 h-52 flex flex-col justify-between ${card.dark ? "bg-[#1A1A1A] text-white -mt-8" : "bg-white"} ${i === 3 ? "mt-8" : ""}`}
+                >
+                  {card.icon}
+                  <div>
+                    <div className="font-mono text-[10px] uppercase opacity-50 mb-1">{card.label}</div>
+                    <div className="font-serif text-xl italic font-bold">{card.value}</div>
+                  </div>
+                </motion.div>
+              ))}
             </div>
           </div>
         </section>
 
-        <section
-          className={`surface-card-elevated rise p-7 md:p-8 ${mode === "chooser" ? "flex min-h-[100px] flex-col" : ""}`}
-        >
-          <div className="mb-6 flex items-start gap-3">
-            <div className="rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 p-2.5">
-              <Sparkles size={20} className="text-orange-700" />
+        {/* Triggers */}
+        <section className="py-24">
+          <div className="mb-16">
+            <div className="h-px bg-[#C0392B] w-full mb-4"></div>
+            <div className="flex justify-between items-end">
+              <h2 className="font-mono text-xs uppercase tracking-[0.3em]">Market Disruption Triggers</h2>
+              <span className="font-serif italic text-2xl">The anatomy of a lost workday.</span>
             </div>
-            <div>
-              <h2 className="text-2xl">
-                {mode === "chooser"
-                  ? "Get started"
-                  : mode === "register"
-                    ? "Create your protection profile"
-                    : "Sign in to your account"}
-              </h2>
-              <p className="text-sm text-black/60">
-                {mode === "chooser"
-                  ? "Choose how you want to continue"
-                  : mode === "register"
-                    ? "Secure onboarding in under 60 seconds"
-                    : "Continue your weekly protection workflow"}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 border border-[#1A1A1A] bg-[#1A1A1A] gap-px">
+            {[
+              { target: 70, suffix: "mm", title: "Rain", desc: "No orders. No income. No recourse.", sub: "Flood Protocol" },
+              { target: 42, suffix: "°C", title: "Heat", desc: "Dangerous conditions. Stay hydrated.", sub: "Thermal Limit" },
+              { target: 350, suffix: " AQI", title: "Air", desc: "Hazardous smoke. Protection active.", sub: "Health Redline" },
+              { icon: <Gavel className="w-8 h-8 text-[#C0392B]" />, title: "Lockdown", desc: "Administrative freeze. Payout ready.", sub: "Admin Override" },
+            ].map((stat, i) => (
+              <Reveal key={i} delay={i * 0.1} className="bg-[#F4F4F0] p-10 flex flex-col h-full">
+                <div className="text-4xl mb-6 text-[#C0392B]">
+                  {stat.target ? <StatCounter target={stat.target} suffix={stat.suffix} /> : stat.icon}
+                </div>
+                <h3 className="font-serif text-xl font-bold mb-4">{stat.title}</h3>
+                <p className="text-sm leading-relaxed mb-8 opacity-70 italic">{stat.desc}</p>
+                <div className="mt-auto font-mono text-[10px] uppercase opacity-40">{stat.sub}</div>
+              </Reveal>
+            ))}
+          </div>
+        </section>
+
+        {/* Steps */}
+        <section className="py-24 border-t border-[#1A1A1A]/10">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mb-20">
+            <div className="col-span-1 md:col-span-6">
+              <h2 className="font-serif text-5xl font-black italic tracking-tighter leading-tight">Five Steps to Hardened Security</h2>
+            </div>
+            <div className="col-span-1 md:col-span-6 flex items-center">
+              <p className="font-mono text-xs uppercase tracking-widest text-[#1A1A1A]/60 leading-relaxed">
+                The giggity protocol is a seamless automated chain.<br /> Once active, the system handles everything. Precision is mandatory.
               </p>
             </div>
           </div>
-
-          {mode === "chooser" ? (
-            <div className="mt-auto space-y-3">
-              <h1 className="mb-3 text-center leading-tight text-[var(--color-ink)]">
-                giggity
-              </h1>
-
-              <button
-                type="button"
-                onClick={() => switchMode("register")}
-                className="accent-btn flex w-full items-center justify-center gap-2 px-5 py-3.5 text-base font-semibold"
-              >
-                Register
-                <ArrowRight size={18} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => switchMode("login")}
-                className="w-full rounded-xl border border-black/15 bg-white/70 px-5 py-3 text-sm font-semibold text-black/80 transition hover:border-black/25 hover:bg-white"
-              >
-                Login
-              </button>
-            </div>
-          ) : mode === "register" ? (
-            <form onSubmit={handleRegister} className="space-y-4">
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-black/85">Full name</span>
-                <input
-                  value={registerForm.name}
-                  onChange={(event) =>
-                    setRegisterForm((previous) => ({ ...previous, name: event.target.value }))
-                  }
-                  required
-                  autoComplete="name"
-                  className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
-                />
-              </label>
-
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-black/85">Email</span>
-                <input
-                  type="email"
-                  value={registerForm.email}
-                  onChange={(event) =>
-                    setRegisterForm((previous) => ({ ...previous, email: event.target.value }))
-                  }
-                  required
-                  autoComplete="email"
-                  className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
-                />
-              </label>
-
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-black/85">Phone</span>
-                <input
-                  value={registerForm.phone}
-                  onChange={(event) =>
-                    setRegisterForm((previous) => ({ ...previous, phone: event.target.value }))
-                  }
-                  required
-                  autoComplete="tel"
-                  className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
-                />
-              </label>
-
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-black/85">Password</span>
-                <div className="relative">
-                  <input
-                    type={showRegisterPassword ? "text" : "password"}
-                    value={registerForm.password}
-                    onChange={(event) =>
-                      setRegisterForm((previous) => ({ ...previous, password: event.target.value }))
-                    }
-                    required
-                    minLength={8}
-                    autoComplete="new-password"
-                    className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 pr-12 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegisterPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-black/60 transition hover:bg-black/5 hover:text-black/85"
-                    aria-label={showRegisterPassword ? "Hide password" : "Show password"}
-                  >
-                    {showRegisterPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
+          
+          <div className="relative py-12 md:py-20 flex flex-col md:flex-row justify-between gap-12 md:gap-0">
+            {/* Connector Line */}
+            <div className="absolute top-0 md:top-1/2 left-1/2 md:left-0 w-px md:w-full h-full md:h-px border-l md:border-l-0 md:border-t border-[#1A1A1A]/20 -z-10 -translate-x-1/2 md:translate-x-0" />
+            
+            {[
+              "Onboard & KYC",
+              "View Weekly Quote",
+              "Buy Protection",
+              "Work Normally",
+              "Receive Payout"
+            ].map((step, i) => (
+              <Reveal key={i} delay={i * 0.1} className="relative flex flex-col items-center w-full md:w-1/5 group">
+                <span className="absolute -top-12 text-6xl font-mono opacity-5 select-none">{String(i + 1).padStart(2, '0')}</span>
+                <div className={`w-12 h-12 flex items-center justify-center font-mono text-sm mb-6 border transition-colors z-10 ${i === 4 ? "bg-[#C0392B] border-[#C0392B] text-white" : "bg-[#1A1A1A] border-[#1A1A1A] text-white group-hover:bg-[#C0392B]"}`}>
+                  {i + 1}
                 </div>
-              </label>
-
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-black/85">Confirm password</span>
-                <div className="relative">
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    value={registerForm.confirmPassword}
-                    onChange={(event) =>
-                      setRegisterForm((previous) => ({ ...previous, confirmPassword: event.target.value }))
-                    }
-                    required
-                    minLength={8}
-                    autoComplete="new-password"
-                    className={`w-full rounded-xl border bg-white/70 px-4 py-3 pr-12 outline-none transition duration-200 backdrop-blur-sm focus:bg-white ${confirmMismatch ? "border-red-500 focus:border-red-600 focus:shadow-[0_0_0_3px_rgba(220,38,38,0.12)]" : ""} ${confirmMatches ? "border-green-500 focus:border-green-600 focus:shadow-[0_0_0_3px_rgba(22,163,74,0.12)]" : ""} ${!confirmMatches && !confirmMismatch ? "border-black/15 focus:border-orange-600 focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]" : ""}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-black/60 transition hover:bg-black/5 hover:text-black/85"
-                    aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
-                  >
-                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-                {confirmMismatch ? (
-                  <span className="mt-1 block text-xs font-medium text-red-700">Passwords do not match.</span>
-                ) : null}
-                {confirmMatches ? (
-                  <span className="mt-1 block text-xs font-medium text-green-700">Passwords match.</span>
-                ) : null}
-              </label>
-
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-black/85">Service Zone</span>
-                <select
-                  value={registerForm.currentZone}
-                  onChange={(event) =>
-                    setRegisterForm((previous) => ({ ...previous, currentZone: event.target.value }))
-                  }
-                  className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
-                >
-                  <option value="ZONE_A">Zone A</option>
-                  <option value="ZONE_B">Zone B</option>
-                  <option value="ZONE_C">Zone C</option>
-                </select>
-              </label>
-
-              {errorMessage ? (
-                <p className="rounded-lg border border-red-300/50 bg-gradient-to-br from-red-50 to-pink-50 px-4 py-3 text-sm font-medium text-red-700">
-                  {errorMessage}
-                </p>
-              ) : null}
-
-              {successMessage ? (
-                <p className="rounded-lg border border-green-300/50 bg-gradient-to-br from-green-50 to-emerald-50 px-4 py-3 text-sm font-medium text-green-700">
-                  {successMessage}
-                </p>
-              ) : null}
-
-              <button
-                type="submit"
-                disabled={loading || confirmMismatch}
-                className="accent-btn flex w-full items-center justify-center gap-2 px-5 py-3.5 text-base font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading ? <Loader2 className="animate-spin" size={18} /> : null}
-                Create Account
-                <ArrowRight size={18} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => switchMode("login")}
-                className="w-full rounded-xl border border-black/15 bg-white/70 px-5 py-3 text-sm font-semibold text-black/80 transition hover:border-black/25 hover:bg-white"
-              >
-                Already registered? Login
-              </button>
-
-              <button
-                type="button"
-                onClick={() => switchMode("chooser")}
-                className="w-full rounded-xl border border-black/10 bg-transparent px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-black/55 transition hover:border-black/20 hover:text-black/80"
-              >
-                Back
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-black/85">Email</span>
-                <input
-                  type="email"
-                  value={loginForm.email}
-                  onChange={(event) =>
-                    setLoginForm((previous) => ({ ...previous, email: event.target.value }))
-                  }
-                  required
-                  autoComplete="email"
-                  className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
-                />
-              </label>
-
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-black/85">Password</span>
-                <div className="relative">
-                  <input
-                    type={showLoginPassword ? "text" : "password"}
-                    value={loginForm.password}
-                    onChange={(event) =>
-                      setLoginForm((previous) => ({ ...previous, password: event.target.value }))
-                    }
-                    required
-                    minLength={8}
-                    autoComplete="current-password"
-                    className="w-full rounded-xl border border-black/15 bg-white/70 px-4 py-3 pr-12 outline-none transition duration-200 backdrop-blur-sm focus:border-orange-600 focus:bg-white focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-black/60 transition hover:bg-black/5 hover:text-black/85"
-                    aria-label={showLoginPassword ? "Hide password" : "Show password"}
-                  >
-                    {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </label>
-
-              {errorMessage ? (
-                <p className="rounded-lg border border-red-300/50 bg-gradient-to-br from-red-50 to-pink-50 px-4 py-3 text-sm font-medium text-red-700">
-                  {errorMessage}
-                </p>
-              ) : null}
-
-              {successMessage ? (
-                <p className="rounded-lg border border-green-300/50 bg-gradient-to-br from-green-50 to-emerald-50 px-4 py-3 text-sm font-medium text-green-700">
-                  {successMessage}
-                </p>
-              ) : null}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="accent-btn flex w-full items-center justify-center gap-2 px-5 py-3.5 text-base font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading ? <Loader2 className="animate-spin" size={18} /> : null}
-                Login
-                <ArrowRight size={18} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => switchMode("register")}
-                className="w-full rounded-xl border border-black/15 bg-white/70 px-5 py-3 text-sm font-semibold text-black/80 transition hover:border-black/25 hover:bg-white"
-              >
-                New here? Register
-              </button>
-
-              <button
-                type="button"
-                onClick={() => switchMode("chooser")}
-                className="w-full rounded-xl border border-black/10 bg-transparent px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-black/55 transition hover:border-black/20 hover:text-black/80"
-              >
-                Back
-              </button>
-            </form>
-          )}
+                <h4 className="font-mono text-[10px] uppercase tracking-widest text-center px-2">{step}</h4>
+              </Reveal>
+            ))}
+          </div>
         </section>
-      </div>
-    </main>
+
+        {/* Pricing */}
+        <section className="py-24">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              { tier: "01", name: "LOW RISK", price: "20", items: ["Standard Payouts", "Single Zone Coverage"], active: false },
+              { tier: "02", name: "MEDIUM RISK", price: "30", items: ["Enhanced Payouts", "Multi-Zone Dynamic", "AQI Coverage"], active: false, italic: true },
+              { tier: "03", name: "HIGH RISK", price: "45", items: ["Maximum Yield", "Global Grid Access", "Lockdown Guaranteed"], active: true, italic: true }
+            ].map((plan, i) => (
+              <Reveal key={i} delay={i * 0.1} className={`flex flex-col border p-8 ${plan.active ? "border-2 border-[#C0392B] bg-white" : "border-[#1A1A1A]"}`}>
+                <div className={`h-1 w-full mb-8 ${plan.active ? "bg-[#C0392B]" : "bg-[#1A1A1A]"}`} />
+                <span className={`font-mono text-[10px] uppercase tracking-[0.2em] mb-2 ${plan.active ? "text-[#C0392B]" : "opacity-60"}`}>Tier {plan.tier}</span>
+                <h3 className={`font-serif text-3xl font-bold mb-8 ${plan.italic ? "italic" : ""}`}>{plan.name}</h3>
+                <ul className="space-y-4 mb-12 flex-grow">
+                  {plan.items.map((item, j) => (
+                    <li key={j} className="flex items-center gap-3 text-sm">
+                      <Check size={14} className="text-[#C0392B]" /> {item}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mb-10">
+                  <span className="font-mono text-4xl font-bold">₹{plan.price}</span>
+                  <span className="font-mono text-[10px] uppercase opacity-50 ml-1">/ Weekly</span>
+                </div>
+                <Button variant={plan.active ? "primary" : "outline"} className="w-full">
+                  Select Plan
+                </Button>
+              </Reveal>
+            ))}
+          </div>
+        </section>
+
+        {/* Trust/RCE */}
+        <section className="py-24 md:py-32 bg-[#1A1A1A] text-[#F4F4F0] -mx-6 md:-mx-12 px-6 md:px-12 grid grid-cols-1 md:grid-cols-2 gap-16 md:gap-24 items-start">
+          <div>
+            <h2 className="text-3xl md:text-5xl font-serif font-black mb-12 italic leading-tight">Reality <span className="text-[#C0392B]">Consistency</span> Engine.</h2>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b border-[#F4F4F0]/20">
+                  <th className="py-4 text-left font-mono text-[10px] uppercase tracking-widest opacity-50">Score Band</th>
+                  <th className="py-4 text-right font-mono text-[10px] uppercase tracking-widest opacity-50">Confidence</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono text-sm">
+                {[
+                  { band: "≤30%", label: "Audit Required", red: true },
+                  { band: "30–60%", label: "Low Fidelity", red: false },
+                  { band: "60–80%", label: "Verified", red: false },
+                  { band: ">80%", label: "Absolute Truth", red: true },
+                ].map((row, i) => (
+                  <tr key={i} className={i !== 3 ? "border-b border-[#F4F4F0]/10" : ""}>
+                    <td className="py-6">{row.band}</td>
+                    <td className={`py-6 text-right ${row.red ? "text-[#C0392B]" : ""}`}>{row.label}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-col gap-10 pt-12">
+            {[
+              "High-precision GPS telemetry cross-referenced with regional satellite imagery for sub-meter accuracy.",
+              "Deep device telemetry capturing accelerometer and battery heat data to confirm physical presence.",
+              "Network signal triangulation ensuring the device is operating within the declared work radius.",
+              "Peer cohort comparison: Analyzing neighborhood activity patterns to eliminate outliers and fraud."
+            ].map((text, i) => (
+              <div key={i} className="flex gap-6 items-start">
+                <span className="font-mono text-[#C0392B] text-lg">/0{i+1}</span>
+                <p className="text-base opacity-80 leading-relaxed">{text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Scale */}
+        <section className="py-24">
+          <div className="mb-12">
+            <h2 className="font-serif text-4xl font-black italic mb-2">Scale Hypothesis</h2>
+            <div className="h-px bg-[#1A1A1A] w-32"></div>
+          </div>
+          <div className="border border-[#1A1A1A] overflow-x-auto">
+            <table className="w-full min-w-[600px]">
+              <thead>
+                <tr className="bg-[#1A1A1A] text-white font-mono text-[10px] uppercase tracking-widest">
+                  <th className="p-6 text-left border-r border-white/10">Phase</th>
+                  <th className="p-6 text-left border-r border-white/10">Workforce</th>
+                  <th className="p-6 text-left border-r border-white/10">Market Depth</th>
+                  <th className="p-6 text-left">Resilience Factor</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono text-sm">
+                {[
+                  { phase: "Pilot", workers: 1000, market: "Single Hub", factor: 1.2 },
+                  { phase: "City", workers: 50000, market: "Metro-wide Grid", factor: 4.8 },
+                  { phase: "Multi-city", workers: 250000, market: "Regional Sync", factor: 12.5 },
+                  { phase: "National", workers: 1000000, market: "Total Coverage", factor: 44.0, highlight: true },
+                ].map((row, i) => (
+                  <tr key={i} className={`border-b border-[#1A1A1A] ${row.highlight ? "bg-[#1A1A1A]/5" : ""}`}>
+                    <td className="p-6 border-r border-[#1A1A1A] font-bold">{row.phase}</td>
+                    <td className="p-6 border-r border-[#1A1A1A] font-bold">
+                      <StatCounter target={row.workers} suffix={row.phase === "National" ? "+" : ""} /> Workers
+                    </td>
+                    <td className="p-6 border-r border-[#1A1A1A]">{row.market}</td>
+                    <td className={`p-6 font-bold ${row.highlight || i === 2 ? "text-[#C0392B]" : ""}`}>
+                      <StatCounter target={row.factor} decimals={1} suffix="x" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Final CTA */}
+        <section className="py-40 flex flex-col items-center text-center">
+          <Reveal className="max-w-2xl">
+            <h2 className="text-4xl md:text-6xl font-serif font-black mb-8 italic">
+              Security is <span className="underline decoration-[#C0392B] underline-offset-[12px] decoration-4">Automated</span>.
+            </h2>
+            <p className="text-lg leading-relaxed mb-12 opacity-70 italic">
+              There are those who hope for clear skies, and those who build the infrastructure to thrive when they're gray. Choose your alignment.
+            </p>
+            <div className="flex flex-col items-center gap-6">
+              <Link href="/signup">
+                <Button size="lg" className="px-16 py-8">Activate Protection</Button>
+              </Link>
+              <span className="font-mono text-[10px] uppercase opacity-40">Zero waiting. Instant verification.</span>
+            </div>
+          </Reveal>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-[#F4F4F0] border-t border-[#1A1A1A]">
+        <div className="flex flex-col md:flex-row justify-between items-center w-full px-6 md:px-12 py-8 max-w-[1080px] mx-auto gap-4">
+          <div className="font-mono text-[10px] tracking-tighter uppercase">
+            © 2024 GIGGITY PARAMETRIC INSURANCE. ALL RIGHTS RESERVED.
+          </div>
+          <div className="flex gap-8">
+            {["Terms", "Privacy", "Legal", "Docs"].map((link) => (
+              <Link key={link} href="#" className="font-mono text-[10px] tracking-tighter uppercase opacity-50 hover:underline decoration-[#C0392B]">{link}</Link>
+            ))}
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }

@@ -1,22 +1,30 @@
 import type { Metadata } from "next";
-import { Bodoni_Moda, Manrope } from "next/font/google";
+import { Playfair_Display, Lora, DM_Mono } from "next/font/google";
 import "./globals.css";
 
-const displayFont = Bodoni_Moda({
+const serifFont = Playfair_Display({
   subsets: ["latin"],
-  variable: "--font-display",
-  weight: ["500", "700"],
+  variable: "--font-serif",
+  weight: ["400", "700", "900"],
+  style: ["normal", "italic"],
 });
 
-const bodyFont = Manrope({
+const loraFont = Lora({
   subsets: ["latin"],
   variable: "--font-body",
   weight: ["400", "500", "700"],
+  style: ["normal", "italic"],
+});
+
+const monoFont = DM_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "Giggity | Worker Protection",
-  description: "AI-Powered Parametric Income Insurance for Gig Workers",
+  title: "Giggity | Parametric Income Insurance",
+  description: "AI-Powered Parametric Income Insurance for Gig Workers. No claims, no forms, no waiting.",
 };
 
 export default function RootLayout({
@@ -27,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${displayFont.variable} ${bodyFont.variable} app-shell min-h-screen antialiased`}
+        className={`${serifFont.variable} ${loraFont.variable} ${monoFont.variable} min-h-screen antialiased selection:bg-[#C0392B] selection:text-white`}
       >
         {children}
       </body>

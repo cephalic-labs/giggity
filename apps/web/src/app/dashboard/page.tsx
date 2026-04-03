@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   BadgeCheck,
   CreditCard,
@@ -10,11 +10,14 @@ import {
   ArrowLeft,
   LogOut,
   ShieldAlert,
+  Activity,
+  Zap,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
+import { Button } from "@/components/ui/Button";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 type AuthTokens = {
   accessToken: string;
@@ -92,14 +95,10 @@ export default function Dashboard() {
     typeof window !== "undefined" ? localStorage.getItem("giggity_role") ?? "WORKER" : "WORKER";
 
   const getTokens = (): AuthTokens | null => {
-    if (typeof window === "undefined") {
-      return null;
-    }
+    if (typeof window === "undefined") return null;
     const accessToken = localStorage.getItem("giggity_access_token");
     const refreshToken = localStorage.getItem("giggity_refresh_token");
-    if (!accessToken || !refreshToken) {
-      return null;
-    }
+    if (!accessToken || !refreshToken) return null;
     return { accessToken, refreshToken };
   };
 
@@ -109,13 +108,8 @@ export default function Dashboard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!refreshRes.ok) {
-      throw new Error("Session expired. Please sign in again.");
-    }
-    const data = (await refreshRes.json()) as {
-      access_token: string;
-      refresh_token: string;
-    };
+    if (!refreshRes.ok) throw new Error("Session expired. Please sign in again.");
+    const data = (await refreshRes.json()) as { access_token: string; refresh_token: string };
     localStorage.setItem("giggity_access_token", data.access_token);
     localStorage.setItem("giggity_refresh_token", data.refresh_token);
     return data.access_token;
@@ -123,9 +117,7 @@ export default function Dashboard() {
 
   const authFetch = async (input: string, init: RequestInit = {}) => {
     const tokens = getTokens();
-    if (!tokens) {
-      throw new Error("No active session. Please sign in.");
-    }
+    if (!tokens) throw new Error("No active session. Please sign in.");
 
     const run = async (accessToken: string) =>
       fetch(input, {
@@ -137,26 +129,22 @@ export default function Dashboard() {
       });
 
     let res = await run(tokens.accessToken);
-    if (res.status !== 401) {
-      return res;
+    if (res.status === 401) {
+      const newAccessToken = await refreshAccessToken(tokens.refreshToken);
+      res = await run(newAccessToken);
     }
-
-    const newAccessToken = await refreshAccessToken(tokens.refreshToken);
-    res = await run(newAccessToken);
     return res;
   };
 
   const fetchDashboardData = async (currentContext: string) => {
     if (!workerId) {
-      router.push("/");
+      router.push("/signin");
       return;
     }
 
     try {
       const [qRes, pRes, cRes, lifecycleRes, payRes, payoutRes] = await Promise.all([
-        authFetch(
-          `${API_BASE}/api/v1/policy/quote?zone=${zone}&disruption_context=${currentContext}`,
-        ),
+        authFetch(`${API_BASE}/api/v1/policy/quote?zone=${zone}&disruption_context=${currentContext}`),
         authFetch(`${API_BASE}/api/v1/policy/active/${workerId}`),
         authFetch(`${API_BASE}/api/v1/claims/${workerId}`),
         authFetch(`${API_BASE}/api/v1/claims/lifecycle/${workerId}`),
@@ -165,27 +153,18 @@ export default function Dashboard() {
       ]);
 
       if ([qRes, pRes, cRes, lifecycleRes, payRes, payoutRes].some((res) => !res.ok)) {
-        throw new Error("Could not load dashboard data. Check backend availability.");
+        throw new Error("Data synchronization failed.");
       }
 
-      const quoteData = (await qRes.json()) as Quote;
-      const policyData = (await pRes.json()) as Policy[];
-      const claimData = (await cRes.json()) as Claim[];
-      const lifecycleData = (await lifecycleRes.json()) as ClaimLifecycleEvent[];
-      const paymentData = (await payRes.json()) as Payment[];
-      const payoutData = (await payoutRes.json()) as Payout[];
-
-      setQuote(quoteData);
-      setPolicies(policyData);
-      setClaims(claimData);
-      setClaimLifecycle(lifecycleData);
-      setPayments(paymentData);
-      setPayouts(payoutData);
+      setQuote(await qRes.json());
+      setPolicies(await pRes.json());
+      setClaims(await cRes.json());
+      setClaimLifecycle(await lifecycleRes.json());
+      setPayments(await payRes.json());
+      setPayouts(await payoutRes.json());
       setErrorMessage(null);
     } catch (e) {
-      setErrorMessage(
-        e instanceof Error ? e.message : "Something went wrong while loading data.",
-      );
+      setErrorMessage(e instanceof Error ? e.message : "Connection lost.");
     } finally {
       setIsInitialLoading(false);
     }
@@ -198,12 +177,8 @@ export default function Dashboard() {
   }, [router, disruptionContext]);
 
   const handleCheckoutAndConfirm = async () => {
-    if (!workerId || !quote) {
-      return;
-    }
-
+    if (!workerId || !quote) return;
     setLoadingAction(true);
-
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 7);
 
@@ -219,64 +194,37 @@ export default function Dashboard() {
           end_date: endDate.toISOString(),
         }),
       });
-
-      if (!checkoutRes.ok) {
-        throw new Error("Unable to initiate payment checkout.");
-      }
-
+      if (!checkoutRes.ok) throw new Error("Checkout failed.");
       const checkout = (await checkoutRes.json()) as { checkout_id: number };
 
       const confirmRes = await authFetch(`${API_BASE}/api/v1/payments/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          checkout_id: checkout.checkout_id,
-          payment_success: true,
-        }),
+        body: JSON.stringify({ checkout_id: checkout.checkout_id, payment_success: true }),
       });
-
-      if (!confirmRes.ok) {
-        throw new Error("Payment confirmation failed.");
-      }
+      if (!confirmRes.ok) throw new Error("Confirmation failed.");
 
       await fetchDashboardData(disruptionContext);
-      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to complete payment rollout.",
-      );
+      setErrorMessage(error instanceof Error ? error.message : "Transaction error.");
     } finally {
       setLoadingAction(false);
     }
   };
 
   const handleTriggerPandemic = async () => {
-    if (!workerId) {
-      return;
-    }
-
+    if (!workerId) return;
     setLoadingAction(true);
-
     try {
       const triggerRes = await authFetch(`${API_BASE}/api/v1/admin/triggers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          zone: zone,
-          trigger_type: "PANDEMIC",
-          severity: 0.9,
-        }),
+        body: JSON.stringify({ zone: zone, trigger_type: "PANDEMIC", severity: 0.9 }),
       });
-
-      if (!triggerRes.ok) {
-        throw new Error("Unable to trigger pandemic simulation.");
-      }
-
+      if (!triggerRes.ok) throw new Error("Simulation failed.");
       setTimeout(() => fetchDashboardData(disruptionContext), 700);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to run simulation.",
-      );
+      setErrorMessage(error instanceof Error ? error.message : "Simulation error.");
     } finally {
       setLoadingAction(false);
     }
@@ -287,320 +235,245 @@ export default function Dashboard() {
 
   if (isInitialLoading) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center px-4">
-        <div className="surface-card flex items-center gap-3 px-6 py-4 text-sm">
-          <Loader2 className="animate-spin" size={18} />
-          Loading worker protection board...
+      <div className="min-h-screen bg-[#F4F4F0] flex items-center justify-center p-8">
+        <div className="font-mono text-[10px] uppercase tracking-widest flex items-center gap-3">
+          <Loader2 className="animate-spin" size={14} />
+          Synchronizing Security Board
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-8 md:px-8">
-      <header className="surface-card-elevated rise flex items-center justify-between p-5 md:p-6">
-        <div>
-          <p className="metric-label mb-1">Worker Protection Command</p>
-          <h1 className="text-3xl">giggity</h1>
-          <p className="text-sm text-black/65">
-            {workerName} • Zone {zone.split("_")[1]}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => router.push("/")}
-            className="rounded-xl border border-black/15 bg-white/70 px-3 py-2 text-sm font-medium transition hover:bg-white hover:border-black/25"
-          >
-            <span className="inline-flex items-center gap-2">
-              <ArrowLeft size={16} />
-              Edit Profile
-            </span>
-          </button>
-          <button
-            onClick={() => {
-              localStorage.clear();
-              router.push("/");
-            }}
-            className="rounded-xl border border-black/15 bg-white/70 p-2.5 transition hover:bg-white hover:border-red-300"
-            aria-label="Log out"
-          >
-            <LogOut size={18} />
-          </button>
+    <div className="min-h-screen bg-[#F4F4F0] text-[#1A1A1A] font-body selection:bg-[#C0392B] selection:text-white pb-20">
+      {/* Header */}
+      <header className="bg-[#F4F4F0] border-b border-[#1A1A1A]">
+        <div className="max-w-[1080px] mx-auto px-6 md:px-12 py-8 flex justify-between items-end">
+          <div className="space-y-4">
+            <div className="text-4xl font-serif font-black tracking-tighter">Giggity</div>
+            <div className="flex items-center gap-6">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-widest opacity-50 mb-1">Active Worker</p>
+                <h1 className="font-serif italic font-bold text-xl">{workerName}</h1>
+              </div>
+              <div className="h-8 w-px bg-[#1A1A1A]/10" />
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-widest opacity-50 mb-1">Zone Assignment</p>
+                <h2 className="font-serif italic font-bold text-xl">{zone.replace("_", " ")}</h2>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <button 
+              onClick={() => { localStorage.clear(); router.push("/signin"); }}
+              className="p-3 border border-[#1A1A1A]/10 hover:border-[#C0392B] transition-colors"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
         </div>
       </header>
 
-      <section className="surface-card-elevated rise p-6 md:p-7">
-        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="metric-label mb-2">Disruption Context</p>
-            <h2 className="text-2xl">Weekly Payment Rollout</h2>
-          </div>
-          <select
-            value={disruptionContext}
-            onChange={(event) => setDisruptionContext(event.target.value)}
-            className="w-full rounded-xl border border-black/15 bg-white/80 px-4 py-2.5 text-sm font-medium transition md:w-auto focus:border-orange-600 focus:shadow-[0_0_0_3px_rgba(194,65,12,0.1)]"
-          >
-            <option value="NORMAL">NORMAL</option>
-            <option value="SEVERE_WEATHER">SEVERE WEATHER</option>
-            <option value="PANDEMIC">PANDEMIC</option>
-          </select>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="metric-card">
-            <p className="metric-label">Weekly Premium</p>
-            <p className="metric-value">Rs {quote?.recommended_premium ?? "--"}</p>
-            <p className="mt-3 text-xs text-black/60">
-              <span className="font-semibold text-orange-700">{quote?.factors?.pricing_multiplier ?? "--"}x</span> multiplier in {quote?.disruption_context}
-            </p>
-          </div>
-
-          <div className="metric-card">
-            <p className="metric-label">Coverage Amount</p>
-            <p className="metric-value">Rs {quote?.cover_amount ?? "--"}</p>
-            <p className="mt-3 text-xs text-black/60">
-              Risk Band: <span className="font-semibold text-black/80">{quote?.risk_level ?? "--"}</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="metric-label">Disruption Ribbon</h3>
-            <span className="metric-label">{quote?.disruption_context ?? "--"}</span>
-          </div>
-          <div
-            className="signal-ribbon h-7 rounded-full"
-            style={{
-              background: disruptionContext === "PANDEMIC" 
-                ? "linear-gradient(90deg, #dcfce7 0%, #fed7aa 100%)"
-                : disruptionContext === "SEVERE_WEATHER"
-                  ? "linear-gradient(90deg, #dbeafe 0%, #fed7aa 100%)"
-                  : "linear-gradient(90deg, #fef3c7 0%, #dbeafe 100%)",
-            }}
-          >
-            <span
-              style={{
-                width:
-                  disruptionContext === "PANDEMIC"
-                    ? "88%"
-                    : disruptionContext === "SEVERE_WEATHER"
-                      ? "66%"
-                      : "40%",
-              }}
-            />
-          </div>
-        </div>
-
-        {!hasActivePolicy ? (
-          <button
-            onClick={handleCheckoutAndConfirm}
-            disabled={loadingAction || !quote}
-            className="accent-btn mt-6 flex w-full items-center justify-center gap-2 px-5 py-4 text-base font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loadingAction ? <Loader2 className="animate-spin" size={20} /> : <CreditCard size={20} />}
-            Run Basic Payment Rollout
-          </button>
-        ) : (
-          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-emerald-600/30 bg-gradient-to-br from-emerald-50 to-teal-50 p-4">
-            <div className="flex-shrink-0">
-              <BadgeCheck size={22} className="text-emerald-700" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                Policy Active
-              </p>
-              <p className="mt-1 text-sm text-emerald-900/80">
-                Your weekly protection is live and claims are auto-routed.
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="surface-card-elevated rise p-6 md:p-7">
-        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <h3 className="text-2xl">Rollout Timeline</h3>
-          <button
-            onClick={handleTriggerPandemic}
-            disabled={loadingAction || !hasActivePolicy || currentRole !== "ADMIN"}
-            className="w-full rounded-xl border border-black/15 bg-white/80 px-4 py-2.5 text-sm font-semibold transition md:w-auto hover:bg-white hover:border-black/25 disabled:opacity-50"
-          >
-            {loadingAction ? <Loader2 className="inline mr-2 animate-spin" size={16} /> : null}
-            Simulate Pandemic Trigger
-          </button>
-        </div>
-
-        {currentRole !== "ADMIN" ? (
-          <p className="mb-3 text-xs font-medium text-black/55">
-            Trigger simulation is restricted to admin accounts.
-          </p>
-        ) : null}
-
-        <ul className="space-y-3">
-          <li className="metric-card">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="state-badge active">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-700" />
-                Step 1
-              </span>
-            </div>
-            <p className="text-sm font-semibold">Quote generated with disruption context</p>
-            <p className="text-sm text-black/70">{quote?.disruption_context} • zone {zone}</p>
-          </li>
-          <li className="metric-card">
-            <div className="mb-2 flex items-center gap-2">
-              <span className={`state-badge ${latestPayment ? "active" : "pending"}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${latestPayment ? "bg-green-700" : "bg-amber-700"}`} />
-                Step 2
-              </span>
-            </div>
-            <p className="text-sm font-semibold">Payment gateway simulation</p>
-            <p className="text-sm text-black/70">
-              {latestPayment
-                ? `Latest transaction: ${latestPayment.provider_ref} (${latestPayment.status})`
-                : "No payment attempt yet"}
-            </p>
-          </li>
-          <li className="metric-card">
-            <div className="mb-2 flex items-center gap-2">
-              <span className={`state-badge ${claimLifecycle.length > 0 ? "active" : "pending"}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${claimLifecycle.length > 0 ? "bg-green-700" : "bg-amber-700"}`} />
-                Step 3
-              </span>
-            </div>
-            <p className="text-sm font-semibold">Auto claim and payout release</p>
-            <p className="text-sm text-black/70">
-              {claimLifecycle.length > 0
-                ? `${claimLifecycle.length} lifecycle event(s) with explicit payout states.`
-                : "No payout lifecycle yet"}
-            </p>
-          </li>
-        </ul>
-      </section>
-
-      <section className="surface-card-elevated p-6 md:p-7">
-        <h4 className="mb-5 text-2xl">Pandemic Lifecycle Feed</h4>
-        <div className="space-y-3">
-          {claimLifecycle.length === 0 ? (
-            <div className="rounded-xl border border-black/10 bg-white/50 p-6 text-center">
-              <p className="text-sm text-black/60">No lifecycle events yet. Trigger a simulation to see live claim progression.</p>
-            </div>
-          ) : (
-            claimLifecycle.map((event) => (
-              <div
-                key={event.claim_id}
-                className="metric-card"
+      <main className="max-w-[1080px] mx-auto px-6 md:px-12 mt-12 grid grid-cols-12 gap-8">
+        {/* Left Column - Main Action */}
+        <section className="col-span-12 lg:col-span-7 space-y-8">
+          <div className="border border-[#1A1A1A] bg-white p-10 space-y-8">
+            <div className="flex justify-between items-start border-b border-[#1A1A1A]/5 pb-8">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-widest opacity-50 mb-2 underline decoration-[#C0392B] underline-offset-4">disruption sensor</p>
+                <h2 className="text-3xl font-serif italic font-bold">Weekly Protection</h2>
+              </div>
+              <select
+                value={disruptionContext}
+                onChange={(e) => setDisruptionContext(e.target.value)}
+                className="font-mono text-[10px] uppercase tracking-widest border border-[#1A1A1A]/10 px-4 py-2 outline-none focus:border-[#C0392B]"
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex-1">
-                    <div className="mb-2 flex items-center gap-2">
-                      <span className="font-semibold text-black/85">Claim #{event.claim_id}</span>
-                      <span className="text-xs text-black/60">•</span>
-                      <span className="text-sm font-medium text-orange-700">{event.trigger_type}</span>
-                    </div>
-                    <p className="text-sm text-black/70">
-                      Severity <span className="font-semibold">{(event.trigger_severity * 100).toFixed(0)}%</span>
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <span className={`state-badge ${event.claim_status === "APPROVED" ? "active" : "pending"}`}>
-                      Claim {event.claim_status}
-                    </span>
-                    <span className={`state-badge ${event.payout_status === "RELEASED" ? "active" : event.payout_status ? "risk" : "pending"}`}>
-                      Payout {event.payout_status ?? "N/A"}
-                    </span>
-                  </div>
-                </div>
-                {event.payout_amount ? (
-                  <p className="mt-3 text-sm font-semibold text-green-700">
-                    ↳ Rs {event.payout_amount.toFixed(2)}
-                  </p>
-                ) : null}
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <article className="surface-card-elevated p-6">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="rounded-xl bg-gradient-to-br from-blue-100 to-cyan-100 p-2">
-              <Landmark size={18} className="text-blue-700" />
+                <option value="NORMAL">NORMAL</option>
+                <option value="SEVERE_WEATHER">WEATHER</option>
+                <option value="PANDEMIC">PANDEMIC</option>
+              </select>
             </div>
-            <h4 className="text-xl">Claims</h4>
-          </div>
-          <div className="space-y-2">
-            {claims.length === 0 ? (
-              <div className="rounded-lg border border-black/10 bg-white/50 p-4 text-center">
-                <p className="text-sm text-black/60">No claims yet.</p>
+
+            <div className="grid grid-cols-2 gap-px bg-[#1A1A1A]/5 border-y border-[#1A1A1A]/5">
+              <div className="py-8 bg-white pr-8">
+                <p className="font-mono text-[10px] uppercase tracking-widest opacity-40 mb-4">Weekly Premium</p>
+                <p className="text-5xl font-serif font-black tracking-tighter">₹{quote?.recommended_premium ?? "--"}</p>
+                <p className="mt-4 font-mono text-[10px] text-[#C0392B] uppercase tracking-widest">
+                  {quote?.factors?.pricing_multiplier}x Multiplier Active
+                </p>
               </div>
+              <div className="py-8 bg-white pl-8 border-l border-[#1A1A1A]/5">
+                <p className="font-mono text-[10px] uppercase tracking-widest opacity-40 mb-4">Total Coverage</p>
+                <p className="text-5xl font-serif font-black tracking-tighter">₹{quote?.cover_amount ?? "--"}</p>
+                <p className="mt-4 font-mono text-[10px] uppercase tracking-widest">
+                  Risk Band: <span className="font-bold">{quote?.risk_level}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <p className="font-mono text-[10px] uppercase tracking-widest opacity-50">Disruption Probability</p>
+                <p className="font-mono text-[10px] uppercase tracking-widest">{quote?.disruption_context}</p>
+              </div>
+              <div className="h-px bg-[#1A1A1A]/10 w-full relative overflow-hidden">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ 
+                    width: disruptionContext === "PANDEMIC" ? "88%" : disruptionContext === "SEVERE_WEATHER" ? "66%" : "40%" 
+                  }}
+                  className="absolute h-full bg-[#C0392B]"
+                />
+              </div>
+            </div>
+
+            {!hasActivePolicy ? (
+              <Button 
+                onClick={handleCheckoutAndConfirm}
+                disabled={loadingAction || !quote}
+                className="w-full py-6 text-base"
+              >
+                {loadingAction ? <Loader2 className="animate-spin mr-2" size={18} /> : <Zap size={18} className="mr-2" />}
+                Activate Protection Profile
+              </Button>
             ) : (
-              claims.map((claim) => (
-                <div key={claim.id} className="metric-card">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-black/60">Claim #{claim.id}</p>
-                      <p className="text-sm font-semibold">Rs {claim.amount}</p>
-                    </div>
-                    <span className={`state-badge ${claim.status === "APPROVED" ? "active" : "pending"}`}>
-                      {claim.status}
-                    </span>
-                  </div>
+              <div className="border border-[#C0392B] p-6 flex items-start gap-4 bg-[#C0392B]/5">
+                <BadgeCheck size={24} className="text-[#C0392B] mt-1" />
+                <div>
+                  <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#C0392B] font-bold mb-1">Coverage Live</h3>
+                  <p className="text-sm opacity-80 italic">Your weekly protection is active. Claims are auto-routed thru the Reality Engine.</p>
                 </div>
-              ))
+              </div>
             )}
           </div>
-        </article>
 
-        <article className="surface-card-elevated p-6">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="rounded-xl bg-gradient-to-br from-red-100 to-orange-100 p-2">
-              <ShieldAlert size={18} className="text-red-700" />
-            </div>
-            <h4 className="text-xl">Payouts</h4>
-          </div>
-          <div className="space-y-2">
-            {payouts.length === 0 ? (
-              <div className="rounded-lg border border-black/10 bg-white/50 p-4 text-center">
-                <p className="text-sm text-black/60">No payouts yet.</p>
+          <div className="border border-[#1A1A1A] bg-[#1A1A1A] p-1 text-white">
+            <div className="border border-white/10 p-10 space-y-8">
+              <div className="flex justify-between items-center">
+                <h3 className="text-2xl font-serif italic font-bold">Rollout Timeline</h3>
+                {currentRole === "ADMIN" && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleTriggerPandemic}
+                    disabled={loadingAction || !hasActivePolicy}
+                    className="border-white/50 text-white hover:bg-white hover:text-[#1A1A1A]"
+                  >
+                    Simulate Pandemic
+                  </Button>
+                )}
               </div>
-            ) : (
-              payouts.map((payout) => (
-                <div key={payout.id} className="metric-card">
-                  <div className="flex items-center justify-between">
+              
+              <div className="space-y-6">
+                {[
+                  { step: "01", label: "Protocol Initialization", detail: `Quote generated for context: ${quote?.disruption_context}`, done: true },
+                  { step: "02", label: "Premium Verification", detail: latestPayment ? `TX_REF: ${latestPayment.provider_ref} (${latestPayment.status})` : "Pending roll-out sequence", done: !!latestPayment },
+                  { step: "03", label: "Claim Orchestration", detail: claimLifecycle.length > 0 ? `${claimLifecycle.length} lifecycle events detected` : "Awaiting sensor trigger", done: claimLifecycle.length > 0 },
+                ].map((item, i) => (
+                  <div key={i} className="flex gap-6 items-start">
+                    <span className={`font-mono text-sm ${item.done ? "text-[#C0392B]" : "opacity-30"}`}>/{item.step}</span>
                     <div>
-                      <p className="text-xs text-black/60">Payout #{payout.id}</p>
-                      <p className="text-sm font-semibold">Rs {payout.amount}</p>
+                      <h4 className={`text-sm font-bold uppercase tracking-widest ${item.done ? "" : "opacity-30"}`}>{item.label}</h4>
+                      <p className="text-xs opacity-50 font-mono mt-1">{item.detail}</p>
                     </div>
-                    <span className={`state-badge ${payout.status === "RELEASED" ? "active" : "pending"}`}>
-                      {payout.status}
-                    </span>
                   </div>
-                </div>
-              ))
-            )}
+                ))}
+              </div>
+            </div>
           </div>
-        </article>
-      </section>
+        </section>
 
+        {/* Right Column - Feeds */}
+        <section className="col-span-12 lg:col-span-5 space-y-8">
+          <div className="border border-[#1A1A1A] bg-white p-8">
+            <div className="flex items-center gap-3 mb-8 border-b border-[#1A1A1A]/5 pb-4">
+              <Activity size={18} className="text-[#C0392B]" />
+              <h3 className="font-mono text-[10px] uppercase tracking-widest font-bold">Lifecycle Feed</h3>
+            </div>
+            <div className="space-y-6 max-h-[400px] overflow-y-auto no-scrollbar">
+              {claimLifecycle.length === 0 ? (
+                <p className="text-xs opacity-40 italic py-8 text-center">No lifecycle events detected in current epoch.</p>
+              ) : (
+                claimLifecycle.map((event) => (
+                  <div key={event.claim_id} className="border border-[#1A1A1A]/5 p-5 space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-mono text-[10px] uppercase tracking-widest opacity-40 mb-1">Claim #{event.claim_id}</p>
+                        <h4 className="font-serif italic font-bold">{event.trigger_type}</h4>
+                      </div>
+                      <span className={`font-mono text-[8px] uppercase tracking-widest px-2 py-1 ${event.claim_status === "APPROVED" ? "bg-[#C0392B] text-white" : "border border-[#1A1A1A]/10"}`}>
+                        {event.claim_status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-4 border-t border-[#1A1A1A]/5">
+                      <p className="text-xs font-mono">Payout: {event.payout_status ?? "Syncing..."}</p>
+                      {event.payout_amount && <span className="font-serif font-bold text-[#C0392B]">₹{event.payout_amount.toFixed(0)}</span>}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-8">
+            <article className="border border-[#1A1A1A] bg-white p-8">
+              <div className="flex items-center gap-3 mb-6 border-b border-[#1A1A1A]/5 pb-4">
+                <Landmark size={18} className="text-[#C0392B]" />
+                <h3 className="font-mono text-[10px] uppercase tracking-widest font-bold">Ledger: Claims</h3>
+              </div>
+              <div className="space-y-3">
+                {claims.length === 0 ? (
+                  <p className="text-xs opacity-40 italic">Empty ledger.</p>
+                ) : (
+                  claims.map((c) => (
+                    <div key={c.id} className="flex justify-between items-center font-mono text-[10px] border-b border-[#1A1A1A]/5 pb-2">
+                      <span className="opacity-50">#{c.id}</span>
+                      <span className="font-bold">₹{c.amount}</span>
+                      <span className={c.status === "APPROVED" ? "text-[#C0392B]" : ""}>{c.status}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
+
+            <article className="border border-[#1A1A1A] bg-[#F4F4F0] p-8">
+              <div className="flex items-center gap-3 mb-6 border-b border-[#1A1A1A]/10 pb-4">
+                <ShieldAlert size={18} className="text-[#C0392B]" />
+                <h3 className="font-mono text-[10px] uppercase tracking-widest font-bold">Ledger: Payouts</h3>
+              </div>
+              <div className="space-y-3">
+                {payouts.length === 0 ? (
+                  <p className="text-xs opacity-40 italic">Empty ledger.</p>
+                ) : (
+                  payouts.map((p) => (
+                    <div key={p.id} className="flex justify-between items-center font-mono text-[10px] border-b border-[#1A1A1A]/10 pb-2">
+                      <span className="opacity-50">#{p.id}</span>
+                      <span className="font-bold">₹{p.amount}</span>
+                      <span className="text-[#C0392B]">{p.status}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      {/* Persistence Error Overlay */}
       <AnimatePresence>
-        {errorMessage ? (
+        {errorMessage && (
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="surface-card-elevated border-red-300/50 bg-gradient-to-br from-red-50 to-pink-50 p-5"
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-[#C0392B] text-white p-6 border border-white/20 z-[100] flex gap-4 items-center"
           >
-            <div className="flex gap-3">
-              <AlertTriangle className="flex-shrink-0 text-red-700" size={20} />
-              <p className="text-sm font-medium text-red-700">{errorMessage}</p>
-            </div>
+            <AlertTriangle size={20} />
+            <p className="font-mono text-[10px] uppercase tracking-widest">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)} className="ml-8 font-mono text-[10px] uppercase tracking-widest border border-white/30 px-3 py-1 hover:bg-white hover:text-[#C0392B]">Dismiss</button>
           </motion.div>
-        ) : null}
+        )}
       </AnimatePresence>
-    </main>
+    </div>
   );
 }
