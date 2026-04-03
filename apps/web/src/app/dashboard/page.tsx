@@ -16,6 +16,11 @@ import { AnimatePresence, motion } from "framer-motion";
 
 const API_BASE = "http://localhost:8000";
 
+type AuthTokens = {
+  accessToken: string;
+  refreshToken: string;
+};
+
 type Quote = {
   zone: string;
   recommended_premium: number;
@@ -83,6 +88,63 @@ export default function Dashboard() {
       ? localStorage.getItem("giggity_worker_name") ?? "Worker"
       : "Worker";
   const zone = typeof window !== "undefined" ? localStorage.getItem("giggity_zone") || "ZONE_A" : "ZONE_A";
+  const currentRole =
+    typeof window !== "undefined" ? localStorage.getItem("giggity_role") ?? "WORKER" : "WORKER";
+
+  const getTokens = (): AuthTokens | null => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const accessToken = localStorage.getItem("giggity_access_token");
+    const refreshToken = localStorage.getItem("giggity_refresh_token");
+    if (!accessToken || !refreshToken) {
+      return null;
+    }
+    return { accessToken, refreshToken };
+  };
+
+  const refreshAccessToken = async (refreshToken: string) => {
+    const refreshRes = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!refreshRes.ok) {
+      throw new Error("Session expired. Please sign in again.");
+    }
+    const data = (await refreshRes.json()) as {
+      access_token: string;
+      refresh_token: string;
+    };
+    localStorage.setItem("giggity_access_token", data.access_token);
+    localStorage.setItem("giggity_refresh_token", data.refresh_token);
+    return data.access_token;
+  };
+
+  const authFetch = async (input: string, init: RequestInit = {}) => {
+    const tokens = getTokens();
+    if (!tokens) {
+      throw new Error("No active session. Please sign in.");
+    }
+
+    const run = async (accessToken: string) =>
+      fetch(input, {
+        ...init,
+        headers: {
+          ...(init.headers ?? {}),
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+    let res = await run(tokens.accessToken);
+    if (res.status !== 401) {
+      return res;
+    }
+
+    const newAccessToken = await refreshAccessToken(tokens.refreshToken);
+    res = await run(newAccessToken);
+    return res;
+  };
 
   const fetchDashboardData = async (currentContext: string) => {
     if (!workerId) {
@@ -92,14 +154,14 @@ export default function Dashboard() {
 
     try {
       const [qRes, pRes, cRes, lifecycleRes, payRes, payoutRes] = await Promise.all([
-        fetch(
+        authFetch(
           `${API_BASE}/api/v1/policy/quote?zone=${zone}&disruption_context=${currentContext}`,
         ),
-        fetch(`${API_BASE}/api/v1/policy/active/${workerId}`),
-        fetch(`${API_BASE}/api/v1/claims/${workerId}`),
-        fetch(`${API_BASE}/api/v1/claims/lifecycle/${workerId}`),
-        fetch(`${API_BASE}/api/v1/payments/${workerId}`),
-        fetch(`${API_BASE}/api/v1/payouts/${workerId}`),
+        authFetch(`${API_BASE}/api/v1/policy/active/${workerId}`),
+        authFetch(`${API_BASE}/api/v1/claims/${workerId}`),
+        authFetch(`${API_BASE}/api/v1/claims/lifecycle/${workerId}`),
+        authFetch(`${API_BASE}/api/v1/payments/${workerId}`),
+        authFetch(`${API_BASE}/api/v1/payouts/${workerId}`),
       ]);
 
       if ([qRes, pRes, cRes, lifecycleRes, payRes, payoutRes].some((res) => !res.ok)) {
@@ -146,7 +208,7 @@ export default function Dashboard() {
     endDate.setDate(endDate.getDate() + 7);
 
     try {
-      const checkoutRes = await fetch(`${API_BASE}/api/v1/payments/checkout`, {
+      const checkoutRes = await authFetch(`${API_BASE}/api/v1/payments/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -164,7 +226,7 @@ export default function Dashboard() {
 
       const checkout = (await checkoutRes.json()) as { checkout_id: number };
 
-      const confirmRes = await fetch(`${API_BASE}/api/v1/payments/confirm`, {
+      const confirmRes = await authFetch(`${API_BASE}/api/v1/payments/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -196,7 +258,7 @@ export default function Dashboard() {
     setLoadingAction(true);
 
     try {
-      const triggerRes = await fetch(`${API_BASE}/api/v1/admin/triggers`, {
+      const triggerRes = await authFetch(`${API_BASE}/api/v1/admin/triggers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -362,13 +424,19 @@ export default function Dashboard() {
           <h3 className="text-2xl">Rollout Timeline</h3>
           <button
             onClick={handleTriggerPandemic}
-            disabled={loadingAction || !hasActivePolicy}
+            disabled={loadingAction || !hasActivePolicy || currentRole !== "ADMIN"}
             className="w-full rounded-xl border border-black/15 bg-white/80 px-4 py-2.5 text-sm font-semibold transition md:w-auto hover:bg-white hover:border-black/25 disabled:opacity-50"
           >
             {loadingAction ? <Loader2 className="inline mr-2 animate-spin" size={16} /> : null}
             Simulate Pandemic Trigger
           </button>
         </div>
+
+        {currentRole !== "ADMIN" ? (
+          <p className="mb-3 text-xs font-medium text-black/55">
+            Trigger simulation is restricted to admin accounts.
+          </p>
+        ) : null}
 
         <ul className="space-y-3">
           <li className="metric-card">
