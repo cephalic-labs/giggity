@@ -7,6 +7,7 @@ from .models import (
     TriggerType,
     PaymentStatus,
     PayoutStatus,
+    UserRole,
 )
 
 # --- User Schemas ---
@@ -17,7 +18,7 @@ class UserBase(BaseModel):
     current_zone: str
 
 class UserCreate(UserBase):
-    pass
+    password: str = Field(min_length=8, max_length=128)
 
 class User(UserBase):
     id: int
@@ -25,6 +26,24 @@ class User(UserBase):
 
     class Config:
         from_attributes = True
+
+class AuthTokenRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+
+class AuthRefreshRequest(BaseModel):
+    refresh_token: str
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+class AuthProfile(BaseModel):
+    user_id: int
+    email: EmailStr
+    role: UserRole
 
 # --- Policy Schemas ---
 class PolicyBase(BaseModel):

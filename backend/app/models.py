@@ -30,6 +30,10 @@ class PayoutStatus(enum.Enum):
     RELEASED = "RELEASED"
     FAILED = "FAILED"
 
+class UserRole(enum.Enum):
+    WORKER = "WORKER"
+    ADMIN = "ADMIN"
+
 class User(Base):
     __tablename__ = "users"
 
@@ -42,6 +46,7 @@ class User(Base):
 
     policies = relationship("Policy", back_populates="worker")
     payments = relationship("PaymentTransaction", back_populates="worker")
+    auth_credential = relationship("AuthCredential", back_populates="user", uselist=False)
 
 class Policy(Base):
     __tablename__ = "policies"
@@ -113,3 +118,18 @@ class PayoutLedger(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     claim = relationship("Claim", back_populates="payouts")
+
+class AuthCredential(Base):
+    __tablename__ = "auth_credentials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.WORKER, nullable=False)
+    refresh_token_hash = Column(String, nullable=True)
+    refresh_token_expires_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="auth_credential")

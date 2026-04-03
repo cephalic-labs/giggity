@@ -463,7 +463,8 @@ Backend:
 ```bash
 cd backend
 pip install -e .
-uvicorn app.main:app --reload --port 8000
+cp .env.example .env  # first time only
+uvicorn app.main:app --reload --port 8000 --env-file .env
 ```
 
 Frontend:
