@@ -74,6 +74,17 @@ class QuoteResponse(BaseModel):
     disruption_context: str
     factors: dict
 
+
+class ZoneInfo(BaseModel):
+    zone_id: str
+    city: str
+    neighbourhood: str
+    lat: float
+    lon: float
+    risk_tier: str
+    weekly_premium: float
+    cover_amount: float
+
 # --- Trigger Schemas ---
 class TriggerEventBase(BaseModel):
     zone: str

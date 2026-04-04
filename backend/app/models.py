@@ -19,6 +19,7 @@ class TriggerType(enum.Enum):
     AQI_SPIKE = "AQI_SPIKE"
     FLASH_FLOOD = "FLASH_FLOOD"
     PANDEMIC = "PANDEMIC"
+    ZONE_LOCKDOWN = "ZONE_LOCKDOWN"
 
 class PaymentStatus(enum.Enum):
     PENDING = "PENDING"
