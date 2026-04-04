@@ -808,6 +808,16 @@ def seed_demo_environment(
         db.commit()
         db.refresh(user)
 
+    # Ensure the demo user has a login credential
+    cred = db.query(models.AuthCredential).filter(models.AuthCredential.user_id == user.id).first()
+    if not cred:
+        cred = models.AuthCredential(
+            user_id=user.id,
+            password_hash=_hash_password(payload.password),
+        )
+        db.add(cred)
+        db.commit()
+
     if not payload.create_active_policy:
         return schemas.SeedDemoResponse(user=user)
 

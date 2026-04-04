@@ -148,6 +148,7 @@ class SeedDemoRequest(BaseModel):
     phone: str = "+910000000000"
     zone: str = "ZONE_A"
     create_active_policy: bool = True
+    password: str = "Demo@1234"
 
 class PaymentTransaction(BaseModel):
     id: int
