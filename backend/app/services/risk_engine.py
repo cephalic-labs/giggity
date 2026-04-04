@@ -20,8 +20,20 @@ from sklearn.ensemble import GradientBoostingRegressor
 
 logger = logging.getLogger(__name__)
 
-MODEL_PATH   = os.path.join(os.path.dirname(__file__), "..", "..", "premium_model.joblib")
-DATASET_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml", "zone_training_data.csv")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "premium_model.joblib")
+
+# DATASET_PATH resolves in priority order:
+#   1. DATASET_PATH env var (set by Docker to /app/ml/zone_training_data.csv)
+#   2. backend/ml/  — self-contained deployment copy
+#   3. repo root ml/ — local dev working tree
+_here = os.path.dirname(__file__)
+_dataset_candidates = [
+    os.path.join(_here, "..", "..", "ml", "zone_training_data.csv"),
+    os.path.join(_here, "..", "..", "..", "ml", "zone_training_data.csv"),
+]
+DATASET_PATH: str = os.environ.get("DATASET_PATH") or next(
+    (p for p in _dataset_candidates if os.path.exists(p)), _dataset_candidates[0]
+)
 
 FEATURE_COLS = [
     "flood_risk", "avg_temp_c", "aqi_baseline",
