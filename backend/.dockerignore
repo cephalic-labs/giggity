@@ -1,0 +1,31 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local database and secrets
+giggity.db
+*.sqlite3
+*.db
+.env
+
+# ML artifacts (model is trained fresh inside the Docker build)
+premium_model.joblib
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Docs
+README.md

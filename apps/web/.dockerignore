@@ -1,0 +1,22 @@
+# Dependencies (installed fresh in Docker)
+node_modules/
+.pnpm-store/
+
+# Build output
+.next/
+out/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Docs
+README.md

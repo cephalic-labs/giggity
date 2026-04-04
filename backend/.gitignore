@@ -28,7 +28,6 @@ MANIFEST
 
 # Poetry environment
 .venv/
-poetry.lock
 
 # Environments
 .env

@@ -1,0 +1,8 @@
+# Root .env (contains secrets — never commit)
+.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

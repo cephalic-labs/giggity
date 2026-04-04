@@ -1,19 +1,29 @@
+import logging
+import os
+import uuid
+import hashlib
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-import hashlib
-import os
-import uuid
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import engine, Base, get_db, SessionLocal
-from .services.risk_engine import predict_premium
+from .services.risk_engine import predict_premium, ZONE_FEATURES
+from .services.trigger_service import ZONE_CONFIG, auto_check_all_zones
+from .services.claims_service import process_zero_touch_claims
+
+logger = logging.getLogger(__name__)
+
+_scheduler = BackgroundScheduler(daemon=True)
 
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
@@ -167,7 +177,29 @@ def get_current_principal(
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Giggity API", description="AI-Powered Parametric Income Insurance API for Gig Workers")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    poll_minutes = int(os.getenv("TRIGGER_POLL_MINUTES", "5"))
+    _scheduler.add_job(
+        auto_check_all_zones,
+        "interval",
+        minutes=poll_minutes,
+        id="auto_trigger_check",
+        replace_existing=True,
+    )
+    _scheduler.start()
+    logger.info("Automated trigger polling started (every %d min)", poll_minutes)
+    yield
+    _scheduler.shutdown(wait=False)
+    logger.info("Trigger scheduler stopped")
+
+
+app = FastAPI(
+    title="Giggity API",
+    description="AI-Powered Parametric Income Insurance for Gig Workers",
+    lifespan=_lifespan,
+)
 
 # Configure CORS for Next.js app
 allow_any_origin = "*" in CORS_ALLOW_ORIGINS
@@ -558,113 +590,23 @@ def get_active_policies(
     return policies
 
 # --- Admin / Triggers & Claims ---
-def _resolve_payout_ratio(trigger_type: models.TriggerType, severity: float) -> float:
-    if trigger_type == models.TriggerType.PANDEMIC:
-        if severity >= 0.85:
-            return 1.0
-        if severity >= 0.7:
-            return 0.8
-        return 0.0
-
-    if trigger_type == models.TriggerType.HEAVY_RAIN:
-        return 1.0 if severity >= 70 else 0.0
-
-    if trigger_type == models.TriggerType.EXTREME_HEAT:
-        return 1.0 if severity >= 42 else 0.0
-
-    if trigger_type == models.TriggerType.AQI_SPIKE:
-        return 1.0 if severity >= 350 else 0.0
-
-    if trigger_type == models.TriggerType.FLASH_FLOOD:
-        return 1.0 if severity >= 75 else 0.0
-
-    return 0.0
-
 
 def _validate_trigger_input(trigger: schemas.TriggerEventCreate) -> None:
-    if trigger.trigger_type == models.TriggerType.PANDEMIC and trigger.severity > 1:
+    binary_types = {models.TriggerType.PANDEMIC, models.TriggerType.ZONE_LOCKDOWN}
+    if trigger.trigger_type in binary_types and trigger.severity > 1:
         raise HTTPException(
             status_code=422,
-            detail="PANDEMIC severity must be between 0 and 1",
+            detail=f"{trigger.trigger_type.value} severity must be between 0 and 1",
         )
-
-    if trigger.trigger_type in {
+    physical_types = {
         models.TriggerType.HEAVY_RAIN,
         models.TriggerType.EXTREME_HEAT,
         models.TriggerType.AQI_SPIKE,
         models.TriggerType.FLASH_FLOOD,
-    } and trigger.severity > 1000:
+    }
+    if trigger.trigger_type in physical_types and trigger.severity > 1000:
         raise HTTPException(status_code=422, detail="severity out of acceptable range")
 
-
-def process_zero_touch_claims(trigger_event_id: int):
-    db = SessionLocal()
-
-    trigger_event = (
-        db.query(models.TriggerEvent)
-        .filter(models.TriggerEvent.id == trigger_event_id)
-        .first()
-    )
-    if not trigger_event:
-        db.close()
-        return
-
-    # Find all active policies in the triggered zone
-    active_policies = db.query(models.Policy).filter(
-        models.Policy.zone == trigger_event.zone,
-        models.Policy.status == models.PolicyStatus.ACTIVE
-    ).all()
-
-    payout_ratio = _resolve_payout_ratio(
-        trigger_type=trigger_event.trigger_type,
-        severity=trigger_event.severity,
-    )
-
-    if payout_ratio <= 0:
-        db.close()
-        return
-    
-    for policy in active_policies:
-        payout_amount = round(policy.cover_amount * payout_ratio, 2)
-
-        claim = models.Claim(
-            policy_id=policy.id,
-            trigger_event_id=trigger_event.id,
-            amount=payout_amount,
-            status=models.ClaimStatus.APPROVED
-        )
-        db.add(claim)
-        db.flush()
-
-        payout = models.PayoutLedger(
-            claim_id=claim.id,
-            policy_id=policy.id,
-            worker_id=policy.worker_id,
-            amount=payout_amount,
-            status=models.PayoutStatus.INITIATED,
-            provider_ref=f"po_{uuid.uuid4().hex[:16]}",
-        )
-        db.add(payout)
-
-    # First commit records the initiated stage so lifecycle is explicit.
-    db.commit()
-
-    initiated_payouts = (
-        db.query(models.PayoutLedger)
-        .join(models.Claim, models.Claim.id == models.PayoutLedger.claim_id)
-        .filter(models.Claim.trigger_event_id == trigger_event.id)
-        .filter(models.PayoutLedger.status == models.PayoutStatus.INITIATED)
-        .all()
-    )
-
-    for payout in initiated_payouts:
-        payout.status = models.PayoutStatus.RELEASED
-        claim = db.query(models.Claim).filter(models.Claim.id == payout.claim_id).first()
-        if claim:
-            claim.status = models.ClaimStatus.PAID
-    
-    db.commit()
-    db.close()
 
 @app.post("/api/v1/admin/triggers", response_model=schemas.TriggerEvent)
 def simulate_trigger(
@@ -673,24 +615,38 @@ def simulate_trigger(
     db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(get_current_principal),
 ):
+    """Manually fire a disruption trigger (admin only). Kicks off zero-touch claims."""
     _require_admin(principal)
-    """Simulate a disruption trigger event from external Oracle (e.g. OpenWeather API mock)"""
     _validate_trigger_input(trigger)
 
     new_event = models.TriggerEvent(
         zone=trigger.zone,
         trigger_type=trigger.trigger_type,
         severity=trigger.severity,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.utcnow(),
     )
     db.add(new_event)
     db.commit()
     db.refresh(new_event)
-    
-    # Step 6: Zero-touch claims engine execution
+
     background_tasks.add_task(process_zero_touch_claims, new_event.id)
-    
     return new_event
+
+
+@app.get("/api/v1/admin/triggers", response_model=list[schemas.TriggerEvent])
+def list_trigger_events(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(get_current_principal),
+):
+    """Return recent trigger events (admin only)."""
+    _require_admin(principal)
+    return (
+        db.query(models.TriggerEvent)
+        .order_by(desc(models.TriggerEvent.timestamp))
+        .limit(limit)
+        .all()
+    )
 
 @app.get("/api/v1/claims/{user_id}", response_model=list[schemas.Claim])
 def get_user_claims(
@@ -774,6 +730,65 @@ def get_user_payouts(
     return payouts
 
 
+@app.get("/api/v1/zones", response_model=list[schemas.ZoneInfo])
+def list_zones(principal: AuthPrincipal = Depends(get_current_principal)):
+    """Return all supported zones with their ML-predicted premiums and risk tier."""
+    _ = principal
+    result: list[schemas.ZoneInfo] = []
+    for zone_id, cfg in ZONE_CONFIG.items():
+        premium, risk_level = predict_premium(zone_id)
+        result.append(
+            schemas.ZoneInfo(
+                zone_id=zone_id,
+                city=cfg["city"],
+                neighbourhood=cfg["neighbourhood"],
+                lat=cfg["lat"],
+                lon=cfg["lon"],
+                risk_tier=risk_level,
+                weekly_premium=premium,
+                cover_amount=500.0,
+            )
+        )
+    return result
+
+
+@app.get("/api/v1/admin/metrics")
+def get_admin_metrics(
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(get_current_principal),
+):
+    """Platform-level metrics for the operations dashboard (admin only)."""
+    _require_admin(principal)
+    from sqlalchemy import func
+
+    total_workers = db.query(func.count(models.User.id)).scalar()
+    active_policies = (
+        db.query(func.count(models.Policy.id))
+        .filter(models.Policy.status == models.PolicyStatus.ACTIVE)
+        .scalar()
+    )
+    total_triggers = db.query(func.count(models.TriggerEvent.id)).scalar()
+    total_claims = db.query(func.count(models.Claim.id)).scalar()
+    total_paid = db.query(func.count(models.Claim.id)).filter(
+        models.Claim.status == models.ClaimStatus.PAID
+    ).scalar()
+    total_payout_amount = (
+        db.query(func.sum(models.PayoutLedger.amount))
+        .filter(models.PayoutLedger.status == models.PayoutStatus.RELEASED)
+        .scalar()
+    ) or 0.0
+
+    return {
+        "total_workers": total_workers,
+        "active_policies": active_policies,
+        "total_triggers_fired": total_triggers,
+        "total_claims": total_claims,
+        "claims_paid": total_paid,
+        "total_payout_inr": round(total_payout_amount, 2),
+        "scheduler_running": _scheduler.running,
+    }
+
+
 @app.post("/api/v1/admin/seed-demo", response_model=schemas.SeedDemoResponse)
 def seed_demo_environment(
     payload: schemas.SeedDemoRequest,
@@ -792,6 +807,16 @@ def seed_demo_environment(
         db.add(user)
         db.commit()
         db.refresh(user)
+
+    # Ensure the demo user has a login credential
+    cred = db.query(models.AuthCredential).filter(models.AuthCredential.user_id == user.id).first()
+    if not cred:
+        cred = models.AuthCredential(
+            user_id=user.id,
+            password_hash=_hash_password(payload.password),
+        )
+        db.add(cred)
+        db.commit()
 
     if not payload.create_active_policy:
         return schemas.SeedDemoResponse(user=user)

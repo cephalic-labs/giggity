@@ -1,0 +1,89 @@
+services:
+
+  # ── PostgreSQL database ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: giggity-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-giggity}
+      POSTGRES_USER:     ${POSTGRES_USER:-giggity}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-giggity_secret}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-giggity} -d ${POSTGRES_DB:-giggity}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - giggity
+
+  # ── Backend: FastAPI + ML risk engine + APScheduler ───────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    image: giggity-backend:latest
+    container_name: giggity-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL:                 postgresql://${POSTGRES_USER:-giggity}:${POSTGRES_PASSWORD:-giggity_secret}@postgres:5432/${POSTGRES_DB:-giggity}
+      JWT_SECRET_KEY:               ${JWT_SECRET_KEY:-change-me-in-production}
+      ACCESS_TOKEN_EXPIRE_MINUTES:  ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS:    ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      CORS_ALLOW_ORIGINS:           ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
+      ADMIN_BOOTSTRAP_EMAILS:       ${ADMIN_BOOTSTRAP_EMAILS:-}
+      TRIGGER_POLL_MINUTES:         ${TRIGGER_POLL_MINUTES:-5}
+      OPENWEATHER_API_KEY:          ${OPENWEATHER_API_KEY:-}
+      OPENAQ_API_KEY:               ${OPENAQ_API_KEY:-}
+      TRIGGER_COOLDOWN_HOURS:       ${TRIGGER_COOLDOWN_HOURS:-6}
+      RAIN_THRESHOLD_MM:            ${RAIN_THRESHOLD_MM:-70}
+      HEAT_THRESHOLD_C:             ${HEAT_THRESHOLD_C:-42}
+      AQI_THRESHOLD:                ${AQI_THRESHOLD:-350}
+      FLASH_FLOOD_RAIN_MM:          ${FLASH_FLOOD_RAIN_MM:-80}
+      FLASH_FLOOD_WIND_KMH:         ${FLASH_FLOOD_WIND_KMH:-45}
+      LOCKDOWN_DAILY_PROB:          ${LOCKDOWN_DAILY_PROB:-0.02}
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - giggity
+
+  # ── Frontend: Next.js worker-facing app ───────────────────────────────────
+  frontend:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: production
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    image: giggity-frontend:latest
+    container_name: giggity-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - giggity
+
+volumes:
+  db_data:
+    driver: local
+
+networks:
+  giggity:
+    driver: bridge

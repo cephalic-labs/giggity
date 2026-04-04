@@ -471,8 +471,8 @@ Frontend:
 
 ```bash
 cd apps/web
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open:

@@ -3,10 +3,25 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Loader2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { API_BASE, signIn } from "@/lib/auth";
+
+const ZONES = [
+  { value: "ZONE_A", label: "Zone A — Bangalore (BTM Layout)", risk: "Low" },
+  { value: "ZONE_B", label: "Zone B — Mumbai (Dharavi)", risk: "Medium" },
+  { value: "ZONE_C", label: "Zone C — Delhi (Laxmi Nagar)", risk: "High" },
+  { value: "ZONE_D", label: "Zone D — Hyderabad (Madhapur)", risk: "Low" },
+  { value: "ZONE_E", label: "Zone E — Chennai (T. Nagar)", risk: "Low" },
+  { value: "ZONE_F", label: "Zone F — Kolkata (New Market)", risk: "Medium" },
+];
+
+const RISK_COLOR: Record<string, string> = {
+  Low: "text-emerald-600",
+  Medium: "text-amber-600",
+  High: "text-[#C0392B]",
+};
 
 export default function SignupPage() {
   const router = useRouter();
@@ -20,6 +35,8 @@ export default function SignupPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedZone = ZONES.find((z) => z.value === form.currentZone)!;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,11 +127,16 @@ export default function SignupPage() {
             label="Confirm Password"
             type="password"
             required
-            error={form.confirmPassword && form.password !== form.confirmPassword ? "Passwords do not match" : undefined}
+            error={
+              form.confirmPassword && form.password !== form.confirmPassword
+                ? "Passwords do not match"
+                : undefined
+            }
             value={form.confirmPassword}
             onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
           />
-          
+
+          {/* Zone Selector */}
           <div className="space-y-2">
             <label className="block font-mono text-[10px] uppercase tracking-widest text-[#1A1A1A]/60">
               Service Zone
@@ -122,12 +144,25 @@ export default function SignupPage() {
             <select
               value={form.currentZone}
               onChange={(e) => setForm({ ...form, currentZone: e.target.value })}
-              className="w-full border border-[#1A1A1A]/10 bg-white px-4 py-3 font-body text-sm outline-none transition-all focus:border-[#C0392B]"
+              className="w-full border border-[#1A1A1A]/10 bg-white px-4 py-3 font-body text-sm outline-none transition-all focus:border-[#C0392B] cursor-pointer"
             >
-              <option value="ZONE_A">Zone A</option>
-              <option value="ZONE_B">Zone B</option>
-              <option value="ZONE_C">Zone C</option>
+              {ZONES.map((z) => (
+                <option key={z.value} value={z.value}>
+                  {z.label}
+                </option>
+              ))}
             </select>
+
+            {/* Zone risk indicator */}
+            <div className="flex items-center gap-2 pt-1">
+              <MapPin size={12} className="text-[#1A1A1A]/40" />
+              <span className="font-mono text-[10px] uppercase tracking-widest text-[#1A1A1A]/40">
+                Risk tier:
+              </span>
+              <span className={`font-mono text-[10px] uppercase tracking-widest font-bold ${RISK_COLOR[selectedZone.risk]}`}>
+                {selectedZone.risk}
+              </span>
+            </div>
           </div>
 
           {error && (
