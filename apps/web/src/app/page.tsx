@@ -1,16 +1,15 @@
 "use client";
 
-import { motion, useScroll, useTransform, useInView } from "framer-motion";
+import { motion, useInView } from "framer-motion";
 import { useRef, useEffect, useState } from "react";
 import Link from "next/link";
-import { 
-  CloudRain, 
-  Thermometer, 
-  Wind, 
-  Lock, 
-  Gavel, 
-  Check, 
-  ArrowRight 
+import {
+  CloudRain,
+  Thermometer,
+  Wind,
+  Lock,
+  Gavel,
+  Check
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -40,7 +39,7 @@ const StatCounter = ({ target, suffix = "", prefix = "", decimals = 0 }: { targe
 
   useEffect(() => {
     if (isInView) {
-      let start = 0;
+      const start = 0;
       const end = target;
       const duration = 2000;
       const startTime = performance.now();
@@ -50,7 +49,7 @@ const StatCounter = ({ target, suffix = "", prefix = "", decimals = 0 }: { targe
         const progress = Math.min(elapsed / duration, 1);
         const easedProgress = 1 - Math.pow(1 - progress, 4); // Quart ease out
         const current = start + (end - start) * easedProgress;
-        
+
         setCount(current);
 
         if (progress < 1) {
@@ -94,12 +93,12 @@ export default function LandingPage() {
           <div className="col-span-1 md:col-span-7">
             <Reveal>
               <h1 className="text-4xl md:text-[72px] font-serif font-black leading-[1.05] tracking-tighter mb-8">
-                When it rains, you shouldn't <span className="italic text-[#C0392B]">lose.</span>
+                When it rains, you shouldn&apos;t <span className="italic text-[#C0392B]">lose.</span>
               </h1>
             </Reveal>
             <Reveal delay={0.2}>
               <p className="text-xl text-[#1A1A1A]/80 max-w-md leading-relaxed mb-12">
-                Giggity detects heat, rain, AQI spikes, and lockdowns in real time. When your zone is disrupted, you're paid automatically. No claims. No forms. No waiting.
+                Giggity detects heat, rain, AQI spikes, and lockdowns in real time. When your zone is disrupted, you&apos;re paid automatically. No claims. No forms. No waiting.
               </p>
             </Reveal>
             <Reveal delay={0.4} className="flex flex-col sm:flex-row gap-6 md:gap-8 items-center">
@@ -111,7 +110,7 @@ export default function LandingPage() {
               </Link>
             </Reveal>
           </div>
-          
+
           <div className="col-span-1 md:col-span-5 relative h-[400px] flex items-center justify-center mt-12 md:mt-0">
             <div className="grid grid-cols-2 gap-4 -rotate-3">
               {[
@@ -122,15 +121,15 @@ export default function LandingPage() {
               ].map((card, i) => (
                 <motion.div
                   key={i}
-                  animate={{ 
+                  animate={{
                     y: [0, -15, 0],
                     rotate: i % 2 === 0 ? [-3, -1, -3] : [-3, -5, -3]
                   }}
-                  transition={{ 
-                    duration: 6, 
-                    repeat: Infinity, 
+                  transition={{
+                    duration: 6,
+                    repeat: Infinity,
                     delay: i * 1.5,
-                    ease: "easeInOut" 
+                    ease: "easeInOut"
                   }}
                   className={`border border-[#1A1A1A] p-6 w-40 h-52 flex flex-col justify-between ${card.dark ? "bg-[#1A1A1A] text-white -mt-8" : "bg-white"} ${i === 3 ? "mt-8" : ""}`}
                 >
@@ -185,11 +184,11 @@ export default function LandingPage() {
               </p>
             </div>
           </div>
-          
+
           <div className="relative py-12 md:py-20 flex flex-col md:flex-row justify-between gap-12 md:gap-0">
             {/* Connector Line */}
             <div className="absolute top-0 md:top-1/2 left-1/2 md:left-0 w-px md:w-full h-full md:h-px border-l md:border-l-0 md:border-t border-[#1A1A1A]/20 -z-10 -translate-x-1/2 md:translate-x-0" />
-            
+
             {[
               "Onboard & KYC",
               "View Weekly Quote",
@@ -273,7 +272,7 @@ export default function LandingPage() {
               "Peer cohort comparison: Analyzing neighborhood activity patterns to eliminate outliers and fraud."
             ].map((text, i) => (
               <div key={i} className="flex gap-6 items-start">
-                <span className="font-mono text-[#C0392B] text-lg">/0{i+1}</span>
+                <span className="font-mono text-[#C0392B] text-lg">/0{i + 1}</span>
                 <p className="text-base opacity-80 leading-relaxed">{text}</p>
               </div>
             ))}
@@ -326,7 +325,7 @@ export default function LandingPage() {
               Security is <span className="underline decoration-[#C0392B] underline-offset-[12px] decoration-4">Automated</span>.
             </h2>
             <p className="text-lg leading-relaxed mb-12 opacity-70 italic">
-              There are those who hope for clear skies, and those who build the infrastructure to thrive when they're gray. Choose your alignment.
+              There are those who hope for clear skies, and those who build the infrastructure to thrive when they&apos;re gray. Choose your alignment.
             </p>
             <div className="flex flex-col items-center gap-6">
               <Link href="/signup">

@@ -52,9 +52,9 @@ ZONE_CONFIG: dict[str, dict] = {
     },
     "ZONE_B": {
         "city": "Mumbai",
-        "neighbourhood": "Dharavi",
-        "lat": 19.0464,
-        "lon": 72.8556,
+        "neighbourhood": "Andheri East",
+        "lat": 19.1136,
+        "lon": 72.8697,
         "risk_tier": "High",
     },
     "ZONE_C": {

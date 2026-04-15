@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, MapPin } from "lucide-react";
@@ -10,12 +10,26 @@ import { API_BASE, signIn } from "@/lib/auth";
 
 const ZONES = [
   { value: "ZONE_A", label: "Zone A — Bangalore (BTM Layout)", risk: "Low" },
-  { value: "ZONE_B", label: "Zone B — Mumbai (Dharavi)", risk: "Medium" },
+  { value: "ZONE_B", label: "Zone B — Mumbai (Andheri East)", risk: "Medium" },
   { value: "ZONE_C", label: "Zone C — Delhi (Laxmi Nagar)", risk: "High" },
   { value: "ZONE_D", label: "Zone D — Hyderabad (Madhapur)", risk: "Low" },
   { value: "ZONE_E", label: "Zone E — Chennai (T. Nagar)", risk: "Low" },
   { value: "ZONE_F", label: "Zone F — Kolkata (New Market)", risk: "Medium" },
 ];
+
+type CollectivePricingStatus = {
+  zone: string;
+  city: string;
+  neighbourhood: string;
+  pool_size: number;
+  base_premium: number;
+  current_premium: number;
+  current_discount_rate: number;
+  next_tier_pool_size: number | null;
+  workers_needed_for_next_tier: number;
+  discount_unlocked_at_next_tier: number;
+  countdown_message: string;
+};
 
 const RISK_COLOR: Record<string, string> = {
   Low: "text-emerald-600",
@@ -35,10 +49,49 @@ export default function SignupPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [collectiveStatus, setCollectiveStatus] = useState<CollectivePricingStatus | null>(null);
+  const [collectiveLoading, setCollectiveLoading] = useState(true);
 
   const selectedZone = ZONES.find((z) => z.value === form.currentZone)!;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCollectivePricing = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/pricing/collective?zone=${form.currentZone}`);
+        if (!res.ok) {
+          throw new Error("Unable to load collective pricing");
+        }
+
+        const data = (await res.json()) as CollectivePricingStatus;
+        if (isMounted) {
+          setCollectiveStatus(data);
+        }
+      } catch {
+        if (isMounted) {
+          setCollectiveStatus(null);
+        }
+      } finally {
+        if (isMounted) {
+          setCollectiveLoading(false);
+        }
+      }
+    };
+
+    setCollectiveLoading(true);
+    void loadCollectivePricing();
+    const intervalId = window.setInterval(() => {
+      void loadCollectivePricing();
+    }, 20000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [form.currentZone]);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
 
@@ -162,6 +215,29 @@ export default function SignupPage() {
               <span className={`font-mono text-[10px] uppercase tracking-widest font-bold ${RISK_COLOR[selectedZone.risk]}`}>
                 {selectedZone.risk}
               </span>
+            </div>
+
+            <div className="mt-3 border border-[#1A1A1A]/10 bg-[#F4F4F0] p-3 space-y-2">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-[#1A1A1A]/50">
+                Collective Pricing
+              </p>
+              {collectiveLoading ? (
+                <p className="font-body text-sm text-[#1A1A1A]/60">Updating live zone pool...</p>
+              ) : collectiveStatus ? (
+                <>
+                  <p className="font-serif italic text-sm text-[#1A1A1A]">
+                    {collectiveStatus.countdown_message}
+                  </p>
+                  <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-widest font-mono text-[#1A1A1A]/60">
+                    <span>{collectiveStatus.pool_size} workers in pool</span>
+                    <span>INR {collectiveStatus.current_premium.toFixed(0)}/week</span>
+                  </div>
+                </>
+              ) : (
+                <p className="font-body text-sm text-[#1A1A1A]/60">
+                  Live collective pricing is temporarily unavailable.
+                </p>
+              )}
             </div>
           </div>
 

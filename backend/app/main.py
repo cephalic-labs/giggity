@@ -14,12 +14,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import engine, Base, get_db, SessionLocal
-from .services.risk_engine import predict_premium, ZONE_FEATURES
+from .services.risk_engine import (
+    predict_premium,
+    ZONE_FEATURES,
+    get_pool_discount_context,
+)
 from .services.trigger_service import ZONE_CONFIG, auto_check_all_zones
 from .services.claims_service import process_zero_touch_claims
 from app.services.forecast_service import generate_weekly_forecast
@@ -131,6 +135,15 @@ def _authorize_user_scope(principal: AuthPrincipal, user_id: int) -> None:
 def _require_admin(principal: AuthPrincipal) -> None:
     if principal.role != models.UserRole.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+
+def _count_workers_in_zone(db: Session, zone: str) -> int:
+    return int(
+        db.query(func.count(models.User.id))
+        .filter(models.User.current_zone == zone)
+        .scalar()
+        or 0
+    )
 
 
 def get_current_principal(
@@ -404,11 +417,15 @@ def list_users(
 def get_policy_quote(
     zone: str,
     disruption_context: str = "NORMAL",
+    db: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(get_current_principal),
 ):
     _ = principal
-    # Step 3: Dynamic Premium Calculation mock using ML model
-    premium, risk_level = predict_premium(zone)
+    pool_size = _count_workers_in_zone(db=db, zone=zone)
+    # Step 3: Dynamic Premium Calculation mock using ML model + collective pricing.
+    premium, risk_level = predict_premium(zone, pool_size=pool_size)
+    base_premium, _ = predict_premium(zone)
+    pricing_context = get_pool_discount_context(base_premium=base_premium, pool_size=pool_size)
 
     normalized_context = disruption_context.upper()
     multiplier = 1.0
@@ -429,7 +446,50 @@ def get_policy_quote(
             "historical_disruption": "baseline",
             "recent_weather": "clear",
             "pricing_multiplier": multiplier,
+            "pool_size": pool_size,
+            "current_discount_rate": pricing_context["current_discount_rate"],
         },
+    )
+
+
+@app.get("/api/v1/pricing/collective", response_model=schemas.CollectivePricingStatus)
+def get_collective_pricing_status(zone: str, db: Session = Depends(get_db)):
+    normalized_zone = zone.upper().strip()
+    cfg = ZONE_CONFIG.get(normalized_zone)
+    if cfg is None:
+        raise HTTPException(status_code=404, detail="Zone not found")
+
+    pool_size = _count_workers_in_zone(db=db, zone=normalized_zone)
+    base_premium, _ = predict_premium(normalized_zone)
+    pricing_context = get_pool_discount_context(base_premium=base_premium, pool_size=pool_size)
+
+    workers_needed = int(pricing_context["workers_needed_for_next_tier"])
+    discount_to_next_tier = float(pricing_context["discount_to_next_tier"])
+    next_tier_threshold = pricing_context["next_tier_threshold"]
+
+    if workers_needed > 0 and next_tier_threshold is not None:
+        worker_word = "worker" if workers_needed == 1 else "workers"
+        countdown_message = (
+            f"{workers_needed} more {worker_word} needed in {cfg['neighbourhood']} "
+            f"to unlock INR {int(round(discount_to_next_tier))} discount"
+        )
+    else:
+        countdown_message = (
+            f"Max collective discount unlocked in {cfg['neighbourhood']}!"
+        )
+
+    return schemas.CollectivePricingStatus(
+        zone=normalized_zone,
+        city=cfg["city"],
+        neighbourhood=cfg["neighbourhood"],
+        pool_size=pool_size,
+        base_premium=round(base_premium, 2),
+        current_premium=float(pricing_context["current_premium"]),
+        current_discount_rate=round(float(pricing_context["current_discount_rate"]), 4),
+        next_tier_pool_size=int(next_tier_threshold) if next_tier_threshold is not None else None,
+        workers_needed_for_next_tier=workers_needed,
+        discount_unlocked_at_next_tier=discount_to_next_tier,
+        countdown_message=countdown_message,
     )
 
 
@@ -803,8 +863,6 @@ def get_admin_metrics(
 ):
     """Platform-level metrics for the operations dashboard (admin only)."""
     _require_admin(principal)
-    from sqlalchemy import func
-
     total_workers = db.query(func.count(models.User.id)).scalar()
     active_policies = (
         db.query(func.count(models.Policy.id))

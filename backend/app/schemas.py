@@ -85,6 +85,20 @@ class ZoneInfo(BaseModel):
     weekly_premium: float
     cover_amount: float
 
+
+class CollectivePricingStatus(BaseModel):
+    zone: str
+    city: str
+    neighbourhood: str
+    pool_size: int
+    base_premium: float
+    current_premium: float
+    current_discount_rate: float
+    next_tier_pool_size: Optional[int] = None
+    workers_needed_for_next_tier: int
+    discount_unlocked_at_next_tier: float
+    countdown_message: str
+
 # --- Trigger Schemas ---
 class TriggerEventBase(BaseModel):
     zone: str

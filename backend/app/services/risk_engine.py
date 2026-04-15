@@ -40,6 +40,18 @@ FEATURE_COLS = [
     "congestion_score", "coastal_proximity", "incidents_per_week",
 ]
 
+# Collective pricing tiers based on worker pool size in a zone.
+# Discount is applied to the base ML premium once the threshold is reached.
+POOL_SIZE_DISCOUNT_TIERS: list[tuple[int, float]] = [
+    (10, 0.00),
+    (25, 0.08),
+    (50, 0.16),
+    (100, 0.29),
+    (250, 0.40),
+    (500, 0.49),
+    (1000, 0.55),
+]
+
 # Per-zone canonical feature vector (historical means from the training CSV).
 # Computed at startup from the real dataset; kept as a dict for fast inference.
 ZONE_FEATURES: dict[str, list[float]] = {}
@@ -103,9 +115,78 @@ def load_model() -> GradientBoostingRegressor:
     return joblib.load(MODEL_PATH)
 
 
+def _normalize_pool_size(pool_size: int | None) -> int:
+    if pool_size is None:
+        return 0
+    return max(0, int(pool_size))
+
+
+def _resolve_discount_rate(pool_size: int) -> float:
+    discount_rate = 0.0
+    for threshold, rate in POOL_SIZE_DISCOUNT_TIERS:
+        if pool_size >= threshold:
+            discount_rate = rate
+        else:
+            break
+    return discount_rate
+
+
+def apply_collective_discount(base_premium: float, pool_size: int | None) -> float:
+    normalized_pool_size = _normalize_pool_size(pool_size)
+    discount_rate = _resolve_discount_rate(normalized_pool_size)
+    discounted = base_premium * (1.0 - discount_rate)
+    return round(max(10.0, discounted), 2)
+
+
+def get_pool_discount_context(base_premium: float, pool_size: int | None) -> dict[str, float | int | None]:
+    normalized_pool_size = _normalize_pool_size(pool_size)
+    current_discount_rate = _resolve_discount_rate(normalized_pool_size)
+
+    current_threshold = 0
+    next_threshold = None
+    for threshold, rate in POOL_SIZE_DISCOUNT_TIERS:
+        if normalized_pool_size >= threshold:
+            current_threshold = threshold
+            current_discount_rate = rate
+            continue
+        next_threshold = threshold
+        break
+
+    if next_threshold is None:
+        return {
+            "pool_size": normalized_pool_size,
+            "current_tier_threshold": current_threshold,
+            "next_tier_threshold": None,
+            "workers_needed_for_next_tier": 0,
+            "current_discount_rate": current_discount_rate,
+            "next_discount_rate": current_discount_rate,
+            "current_premium": apply_collective_discount(base_premium, normalized_pool_size),
+            "next_tier_premium": apply_collective_discount(base_premium, normalized_pool_size),
+            "discount_to_next_tier": 0.0,
+        }
+
+    workers_needed = max(0, next_threshold - normalized_pool_size)
+    next_discount_rate = _resolve_discount_rate(next_threshold)
+    current_premium = apply_collective_discount(base_premium, normalized_pool_size)
+    next_tier_premium = apply_collective_discount(base_premium, next_threshold)
+
+    return {
+        "pool_size": normalized_pool_size,
+        "current_tier_threshold": current_threshold,
+        "next_tier_threshold": next_threshold,
+        "workers_needed_for_next_tier": workers_needed,
+        "current_discount_rate": current_discount_rate,
+        "next_discount_rate": next_discount_rate,
+        "current_premium": current_premium,
+        "next_tier_premium": next_tier_premium,
+        "discount_to_next_tier": round(max(0.0, current_premium - next_tier_premium), 2),
+    }
+
+
 def predict_premium(
     zone: str,
     realtime_override: dict[str, float] | None = None,
+    pool_size: int | None = None,
 ) -> tuple[float, str]:
     """
     Predict weekly premium for a zone.
@@ -134,6 +215,7 @@ def predict_premium(
                 features[idx] = float(value)
 
     premium = float(model.predict([features])[0])
+    premium = apply_collective_discount(premium, pool_size)
 
     flood_risk, temp, aqi_pm25 = features[0], features[1], features[2]
     # aqi_baseline is mean PM2.5 in µg/m³ (from Open-Meteo archive)
@@ -145,7 +227,7 @@ def predict_premium(
     else:
         risk_level = "Low"
 
-    return max(10.0, round(premium, 2)), risk_level
+    return premium, risk_level
 
 
 def evaluate_risk(temperature: float, rainfall: float) -> dict[str, float | str]:
