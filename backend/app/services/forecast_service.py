@@ -212,22 +212,10 @@ def calculate_zone_impact(zone: str, confidence: float):
 # -----------------------------
 
 def suggest_premium(confidence: float, risk: str) -> str:
-    try:
-        if premium_model:
-            pred = premium_model.predict([[confidence]])[0]
-            return f"{round(pred, 2)}%"
-
-    except Exception as e:
-        print(f"[ML Error] {e}")
-
-    # fallback logic
-    if confidence > 0.8:
-        return "+15%"
-    elif confidence > 0.6:
-        return "+10%"
-    elif confidence > 0.4:
-        return "+5%"
-    return "0%"
+    # Data-driven premium adjustment: scales linearly with confidence
+    # Higher risk (confidence) → higher premium adjustment
+    premium_change = int(confidence * 15)
+    return f"+{premium_change}%"
 
 
 # -----------------------------
