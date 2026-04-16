@@ -116,6 +116,19 @@ def normalize_forecast(raw: Dict[str, Any], zone: str) -> List[Dict]:
     return normalized
 
 
+def extract_features(weather: Dict[str, Any]) -> Dict[str, float]:
+    temperatures = weather.get("temperature_2m_max", []) if weather else []
+    rainfall = weather.get("precipitation_sum", []) if weather else []
+
+    max_temp = max(temperatures) if temperatures else 0.0
+    rain_total = sum(rainfall) if rainfall else 0.0
+
+    return {
+        "heat": float(max_temp),
+        "rain": float(rain_total),
+    }
+
+
 # -----------------------------
 # RISK ENGINE PIPELINE
 # -----------------------------
@@ -222,6 +235,8 @@ def generate_weekly_forecast() -> List[Dict]:
         if raw is None:
             continue
 
+        features = extract_features(raw.get("daily", {}))
+
         normalized = normalize_forecast(raw, zone["name"])
 
         if not normalized:
@@ -248,6 +263,7 @@ def generate_weekly_forecast() -> List[Dict]:
             "zone": zone["name"],
             "risk": summary["risk"],
             "confidence": summary["confidence"],
+            "features": features,
             "active_policies": total,
             "expected_payouts": expected,
             "payout_inr": payout,
