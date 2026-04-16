@@ -195,9 +195,9 @@ def calculate_zone_impact(zone: str, confidence: float):
         total_policies = total_policies or 0
 
         expected_payouts = int(total_policies * confidence)
-        payout_amount = expected_payouts * PAYOUT_PER_POLICY
+        payout_inr = expected_payouts * PAYOUT_PER_POLICY
 
-        return total_policies, expected_payouts, payout_amount
+        return total_policies, expected_payouts, payout_inr
 
     except Exception as e:
         print(f"[DB Error] {zone} -> {e}")
