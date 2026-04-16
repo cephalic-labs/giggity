@@ -28,8 +28,12 @@ import {
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
+import {
+  LiveWeatherForecastDashboard,
+  type ForecastData,
+} from "@/components/dashboard/LiveWeatherForecastDashboard";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:8000";
 
 // ── Static zone metadata (mirrors backend ZONE_CONFIG) ───────────────────────
 const ZONE_META: Record<string, { city: string; neighbourhood: string }> = {
@@ -175,6 +179,7 @@ export default function Dashboard() {
   // Admin data
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [triggers, setTriggers] = useState<TriggerEvent[]>([]);
+  const [forecast, setForecast] = useState<ForecastData[]>([]);
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
@@ -254,12 +259,35 @@ export default function Dashboard() {
   const fetchAdminData = useCallback(async () => {
     if (!isAdmin) return;
     try {
-      const [mR, tR] = await Promise.all([
+      const fetchForecast = async () => {
+        const primary = await fetch(`${API_BASE}/admin/forecast`);
+        if (primary.ok) return primary;
+
+        if (!API_BASE.includes("localhost:8000")) {
+          const localFallback = await fetch("http://localhost:8000/admin/forecast");
+          if (localFallback.ok) return localFallback;
+        }
+
+        return primary;
+      };
+
+      const [mR, tR, fR] = await Promise.allSettled([
         authFetch(`${API_BASE}/api/v1/admin/metrics`),
         authFetch(`${API_BASE}/api/v1/admin/triggers`),
+        fetchForecast(),
       ]);
-      if (mR.ok) setMetrics(await mR.json());
-      if (tR.ok) setTriggers(await tR.json());
+
+      if (mR.status === "fulfilled" && mR.value.ok) {
+        setMetrics(await mR.value.json());
+      }
+
+      if (tR.status === "fulfilled" && tR.value.ok) {
+        setTriggers(await tR.value.json());
+      }
+
+      if (fR.status === "fulfilled" && fR.value.ok) {
+        setForecast(await fR.value.json());
+      }
     } catch {
       // non-fatal
     }
@@ -754,6 +782,9 @@ export default function Dashboard() {
                 Scheduler: {metrics.scheduler_running ? "Running" : "Stopped"}
               </div>
             )}
+
+            {/* Live Forecast Grid */}
+            {forecast.length > 0 && <LiveWeatherForecastDashboard forecast={forecast} />}
 
             <div className="grid grid-cols-12 gap-6">
 
