@@ -20,6 +20,8 @@ from .database import engine, Base, get_db, SessionLocal
 from .services.risk_engine import predict_premium, ZONE_FEATURES
 from .services.trigger_service import ZONE_CONFIG, auto_check_all_zones
 from .services.claims_service import process_zero_touch_claims
+from app.services.forcast_service import generate_weekly_forecast
+
 
 logger = logging.getLogger(__name__)
 
@@ -787,6 +789,13 @@ def get_admin_metrics(
         "total_payout_inr": round(total_payout_amount, 2),
         "scheduler_running": _scheduler.running,
     }
+
+
+@app.get("/admin/forecast")
+def forecast():
+    return generate_weekly_forecast()
+
+
 
 
 @app.post("/api/v1/admin/seed-demo", response_model=schemas.SeedDemoResponse)
