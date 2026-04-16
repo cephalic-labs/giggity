@@ -129,6 +129,14 @@ def extract_features(weather: Dict[str, Any]) -> Dict[str, float]:
     }
 
 
+def compute_risk(features: Dict[str, float]) -> tuple[str, float]:
+    if features.get("rain", 0.0) > 50:
+        return "rain", 0.8
+    if features.get("heat", 0.0) > 40:
+        return "heat", 0.7
+    return "low", 0.2
+
+
 # -----------------------------
 # RISK ENGINE PIPELINE
 # -----------------------------
@@ -236,33 +244,27 @@ def generate_weekly_forecast() -> List[Dict]:
             continue
 
         features = extract_features(raw.get("daily", {}))
+        risk, confidence = compute_risk(features)
 
         normalized = normalize_forecast(raw, zone["name"])
 
         if not normalized:
             continue
 
-        predictions = run_risk_on_forecast(normalized)
-
-        if not predictions:
-            continue
-
-        summary = summarize_week(predictions)
-
         total, expected, payout = calculate_zone_impact(
             zone["name"],
-            summary["confidence"]
+            confidence
         )
 
         premium = suggest_premium(
-            summary["confidence"],
-            summary["risk"]
+            confidence,
+            risk
         )
 
         results.append({
             "zone": zone["name"],
-            "risk": summary["risk"],
-            "confidence": summary["confidence"],
+            "risk": risk,
+            "confidence": confidence,
             "features": features,
             "active_policies": total,
             "expected_payouts": expected,
