@@ -65,23 +65,30 @@ except Exception:
 # FETCH FORECAST
 # -----------------------------
 
-def fetch_forecast(lat: float, lon: float) -> Dict[str, Any] | None:
+def get_weather(lat: float, lon: float) -> Dict[str, Any] | None:
     try:
         params = {
             "latitude": lat,
             "longitude": lon,
             "daily": "temperature_2m_max,precipitation_sum",
-            "timezone": "auto"
+            "timezone": "auto",
         }
-
         response = requests.get(OPEN_METEO_URL, params=params, timeout=5)
         response.raise_for_status()
 
-        return response.json()
+        payload = response.json()
+        return payload.get("daily")
 
     except Exception as e:
-        print(f"[Forecast Error] {lat},{lon} -> {e}")
+        print(f"[Weather API Error] {lat},{lon} -> {e}")
         return None
+
+
+def fetch_forecast(lat: float, lon: float) -> Dict[str, Any] | None:
+    daily = get_weather(lat, lon)
+    if daily is None:
+        return None
+    return {"daily": daily}
 
 
 # -----------------------------
