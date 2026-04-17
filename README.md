@@ -8,6 +8,7 @@
 [![React Native](https://img.shields.io/badge/React_Native-0.84-61dafb.svg)](https://reactnative.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18+-blue.svg)](https://postgresql.org)
 [![pgvector](https://img.shields.io/badge/pgvector-0.8+-green.svg)](https://github.com/pgvector/pgvector)
+[![Pitch Deck](https://img.shields.io/badge/Pitch%20Deck-Google%20Drive-4285F4.svg?logo=google-drive&logoColor=white)](https://docs.google.com/document/d/1rkENK-7n-cpC35Zph6X6qmwhR4jvyr5p4ZGAwpjxodA/edit?usp=sharing)
 
 **giggity** is an AI-driven **parametric income insurance** platform for gig workers. The goal is to detect real-world disruptions (rain, heat, AQI spikes, lockdowns), validate impact, and trigger fast payouts with minimal user friction.
 
