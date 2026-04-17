@@ -180,6 +180,8 @@ export default function Dashboard() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [triggers, setTriggers] = useState<TriggerEvent[]>([]);
   const [forecast, setForecast] = useState<ForecastData[]>([]);
+  const [forecastUpdatedAt, setForecastUpdatedAt] = useState<string | null>(null);
+  const forecastEtagRef = useRef<string | null>(null);
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
@@ -260,12 +262,21 @@ export default function Dashboard() {
     if (!isAdmin) return;
     try {
       const fetchForecast = async () => {
-        const primary = await fetch(`${API_BASE}/admin/forecast`);
-        if (primary.ok) return primary;
+        const conditionalHeaders: HeadersInit = {};
+        if (forecastEtagRef.current) {
+          conditionalHeaders["If-None-Match"] = forecastEtagRef.current;
+        }
+
+        const primary = await fetch(`${API_BASE}/admin/forecast`, {
+          headers: conditionalHeaders,
+        });
+        if (primary.ok || primary.status === 304) return primary;
 
         if (!API_BASE.includes("localhost:8000")) {
-          const localFallback = await fetch("http://localhost:8000/admin/forecast");
-          if (localFallback.ok) return localFallback;
+          const localFallback = await fetch("http://localhost:8000/admin/forecast", {
+            headers: conditionalHeaders,
+          });
+          if (localFallback.ok || localFallback.status === 304) return localFallback;
         }
 
         return primary;
@@ -285,8 +296,16 @@ export default function Dashboard() {
         setTriggers(await tR.value.json());
       }
 
-      if (fR.status === "fulfilled" && fR.value.ok) {
-        setForecast(await fR.value.json());
+      if (fR.status === "fulfilled") {
+        const etag = fR.value.headers.get("etag");
+        if (etag) forecastEtagRef.current = etag;
+
+        const updatedAt = fR.value.headers.get("x-forecast-updated-at");
+        if (updatedAt) setForecastUpdatedAt(updatedAt);
+
+        if (fR.value.ok) {
+          setForecast(await fR.value.json());
+        }
       }
     } catch {
       // non-fatal
@@ -298,13 +317,43 @@ export default function Dashboard() {
   ctxRef.current = disruptionCtx;
 
   useEffect(() => {
-    fetchWorkerData(ctxRef.current);
-    if (isAdmin) fetchAdminData();
-    const id = setInterval(() => {
-      fetchWorkerData(ctxRef.current);
-      if (isAdmin) fetchAdminData();
-    }, 8000);
-    return () => clearInterval(id);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const nextDelay = () => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) return 30000;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return 15000;
+      return 3000;
+    };
+
+    const schedule = (delayMs: number) => {
+      if (cancelled) return;
+      timer = setTimeout(tick, delayMs);
+    };
+
+    const tick = async () => {
+      if (cancelled) return;
+      await fetchWorkerData(ctxRef.current);
+      if (isAdmin) await fetchAdminData();
+      schedule(nextDelay());
+    };
+
+    const rerunNow = () => {
+      if (cancelled) return;
+      if (timer) clearTimeout(timer);
+      tick();
+    };
+
+    tick();
+    window.addEventListener("online", rerunNow);
+    document.addEventListener("visibilitychange", rerunNow);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("online", rerunNow);
+      document.removeEventListener("visibilitychange", rerunNow);
+    };
   }, [fetchWorkerData, fetchAdminData, isAdmin]);
 
   // Re-fetch quote when disruption context changes
@@ -784,7 +833,9 @@ export default function Dashboard() {
             )}
 
             {/* Live Forecast Grid */}
-            {forecast.length > 0 && <LiveWeatherForecastDashboard forecast={forecast} />}
+            {forecast.length > 0 && (
+              <LiveWeatherForecastDashboard forecast={forecast} lastUpdated={forecastUpdatedAt} />
+            )}
 
             <div className="grid grid-cols-12 gap-6">
 

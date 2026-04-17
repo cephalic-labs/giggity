@@ -16,6 +16,7 @@ export type ForecastData = {
 
 type LiveWeatherForecastDashboardProps = {
   forecast: ForecastData[];
+  lastUpdated?: string | null;
 };
 
 const riskBadgeClass = (risk: string) => {
@@ -40,8 +41,15 @@ const riskLabel = (risk: string) => {
 const inrFmt = (n: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(n));
 
-export function LiveWeatherForecastDashboard({ forecast }: LiveWeatherForecastDashboardProps) {
+export function LiveWeatherForecastDashboard({ forecast, lastUpdated = null }: LiveWeatherForecastDashboardProps) {
   const safeForecast = forecast.filter((item) => typeof item.zone === "string");
+  const updatedLabel = lastUpdated
+    ? new Date(lastUpdated).toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : null;
 
   const summary = safeForecast.reduce(
     (acc, item) => {
@@ -81,7 +89,9 @@ export function LiveWeatherForecastDashboard({ forecast }: LiveWeatherForecastDa
           <h3 className="font-mono text-[10px] uppercase tracking-widest font-bold">Live Weather Forecast</h3>
         </div>
         <span className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/35">Open-Meteo</span>
-        <span className="ml-auto font-mono text-[9px] text-[#1A1A1A]/30 animate-pulse">Live</span>
+        <span className="ml-auto font-mono text-[9px] text-[#1A1A1A]/30 animate-pulse">
+          {updatedLabel ? `Updated ${updatedLabel}` : "Live"}
+        </span>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
