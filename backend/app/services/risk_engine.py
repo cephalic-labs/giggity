@@ -43,7 +43,7 @@ FEATURE_COLS = [
 # Collective pricing tiers based on worker pool size in a zone.
 # Discount is applied to the base ML premium once the threshold is reached.
 POOL_SIZE_DISCOUNT_TIERS: list[tuple[int, float]] = [
-    (10, 0.00),
+    (10, 0.025),
     (25, 0.08),
     (50, 0.16),
     (100, 0.29),
@@ -144,13 +144,22 @@ def get_pool_discount_context(base_premium: float, pool_size: int | None) -> dic
 
     current_threshold = 0
     next_threshold = None
+
+    # Resolve current tier first.
     for threshold, rate in POOL_SIZE_DISCOUNT_TIERS:
         if normalized_pool_size >= threshold:
             current_threshold = threshold
             current_discount_rate = rate
             continue
-        next_threshold = threshold
         break
+
+    # Find the next tier that provides a strictly better discount.
+    for threshold, rate in POOL_SIZE_DISCOUNT_TIERS:
+        if threshold <= normalized_pool_size:
+            continue
+        if rate > current_discount_rate:
+            next_threshold = threshold
+            break
 
     if next_threshold is None:
         return {
