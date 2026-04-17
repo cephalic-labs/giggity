@@ -148,6 +148,34 @@ def predict_premium(
     return max(10.0, round(premium, 2)), risk_level
 
 
+def evaluate_risk(temperature: float, rainfall: float) -> dict[str, float | str]:
+    """
+    Lightweight weather risk evaluator used by forecast workflows.
+
+    Returns a normalized confidence score (0..1) and categorical risk level.
+    """
+    try:
+        temp = float(temperature)
+        rain = float(rainfall)
+    except (TypeError, ValueError):
+        temp = 0.0
+        rain = 0.0
+
+    # Weighted score favors rainfall while still accounting for heat stress.
+    rain_component = min(max(rain / 60.0, 0.0), 1.0)
+    temp_component = min(max((temp - 30.0) / 12.0, 0.0), 1.0)
+    confidence = min(max((rain_component * 0.7) + (temp_component * 0.3), 0.0), 1.0)
+
+    if confidence >= 0.75:
+        risk = "high"
+    elif confidence >= 0.40:
+        risk = "medium"
+    else:
+        risk = "low"
+
+    return {"risk": risk, "confidence": round(confidence, 2)}
+
+
 if __name__ == "__main__":
     train_model()
     _ensure_zone_features()

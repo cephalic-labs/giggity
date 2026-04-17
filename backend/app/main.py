@@ -2,12 +2,14 @@ import logging
 import os
 import uuid
 import hashlib
+import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from threading import Lock
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, status
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, status, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -20,13 +22,19 @@ from .database import engine, Base, get_db, SessionLocal
 from .services.risk_engine import predict_premium, ZONE_FEATURES
 from .services.trigger_service import ZONE_CONFIG, auto_check_all_zones
 from .services.claims_service import process_zero_touch_claims
+from app.services.forecast_service import generate_weekly_forecast
 
 logger = logging.getLogger(__name__)
 
 _scheduler = BackgroundScheduler(daemon=True)
+_forecast_cache_lock = Lock()
+_forecast_cache: list[dict] = []
+_forecast_cache_etag = ""
+_forecast_cache_updated_at = ""
 
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+FORECAST_REFRESH_SECONDS = int(os.getenv("FORECAST_REFRESH_SECONDS", "60"))
 JWT_ALGORITHM = "HS256"
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-change-in-production")
 CORS_ALLOW_ORIGINS = [
@@ -178,9 +186,36 @@ def get_current_principal(
 models.Base.metadata.create_all(bind=engine)
 
 
+def _refresh_forecast_cache() -> None:
+    try:
+        forecast = generate_weekly_forecast()
+        payload = json.dumps(forecast, sort_keys=True, separators=(",", ":"))
+        etag = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        updated_at = datetime.now(timezone.utc).isoformat()
+
+        with _forecast_cache_lock:
+            global _forecast_cache
+            global _forecast_cache_etag
+            global _forecast_cache_updated_at
+            _forecast_cache = forecast
+            _forecast_cache_etag = etag
+            _forecast_cache_updated_at = updated_at
+
+        logger.info("Forecast cache refreshed: zones=%d", len(forecast))
+    except Exception:
+        logger.exception("Forecast cache refresh failed")
+
+
+def _read_forecast_cache() -> tuple[list[dict], str, str]:
+    with _forecast_cache_lock:
+        return list(_forecast_cache), _forecast_cache_etag, _forecast_cache_updated_at
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     poll_minutes = int(os.getenv("TRIGGER_POLL_MINUTES", "5"))
+    _refresh_forecast_cache()
+
     _scheduler.add_job(
         auto_check_all_zones,
         "interval",
@@ -188,8 +223,16 @@ async def _lifespan(app: FastAPI):
         id="auto_trigger_check",
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _refresh_forecast_cache,
+        "interval",
+        seconds=FORECAST_REFRESH_SECONDS,
+        id="forecast_cache_refresh",
+        replace_existing=True,
+    )
     _scheduler.start()
     logger.info("Automated trigger polling started (every %d min)", poll_minutes)
+    logger.info("Forecast cache refresh started (every %d sec)", FORECAST_REFRESH_SECONDS)
     yield
     _scheduler.shutdown(wait=False)
     logger.info("Trigger scheduler stopped")
@@ -209,6 +252,7 @@ app.add_middleware(
     allow_credentials=not allow_any_origin,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["ETag", "X-Forecast-Updated-At"],
 )
 
 @app.get("/")
@@ -787,6 +831,29 @@ def get_admin_metrics(
         "total_payout_inr": round(total_payout_amount, 2),
         "scheduler_running": _scheduler.running,
     }
+
+
+@app.get("/admin/forecast")
+def forecast(request: Request, response: Response):
+    forecast_data, etag, updated_at = _read_forecast_cache()
+    if not forecast_data:
+        _refresh_forecast_cache()
+        forecast_data, etag, updated_at = _read_forecast_cache()
+
+    client_etag = request.headers.get("if-none-match", "").strip().strip('"')
+    response.headers["Cache-Control"] = "no-cache"
+    if etag:
+        response.headers["ETag"] = f'"{etag}"'
+    if updated_at:
+        response.headers["X-Forecast-Updated-At"] = updated_at
+
+    if etag and client_etag == etag:
+        response.status_code = status.HTTP_304_NOT_MODIFIED
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=dict(response.headers))
+
+    return forecast_data
+
+
 
 
 @app.post("/api/v1/admin/seed-demo", response_model=schemas.SeedDemoResponse)
