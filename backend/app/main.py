@@ -714,6 +714,48 @@ def list_trigger_events(
     )
 
 
+@app.post("/api/v1/admin/triggers/scan-now", response_model=schemas.TriggerScanResponse)
+def scan_triggers_now(
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(get_current_principal),
+):
+    _require_admin(principal)
+
+    fired_ids = auto_check_all_zones()
+    claims_created = 0
+    payouts_created = 0
+    held_payouts = 0
+
+    if fired_ids:
+        claims_created = (
+            db.query(models.Claim)
+            .filter(models.Claim.trigger_event_id.in_(fired_ids))
+            .count()
+        )
+        payouts_created = (
+            db.query(models.PayoutLedger)
+            .join(models.Claim, models.Claim.id == models.PayoutLedger.claim_id)
+            .filter(models.Claim.trigger_event_id.in_(fired_ids))
+            .count()
+        )
+        held_payouts = (
+            db.query(models.PayoutLedger)
+            .join(models.Claim, models.Claim.id == models.PayoutLedger.claim_id)
+            .filter(models.Claim.trigger_event_id.in_(fired_ids))
+            .filter(models.PayoutLedger.status == models.PayoutStatus.HELD)
+            .count()
+        )
+
+    return schemas.TriggerScanResponse(
+        scanned_zones=len(ZONE_CONFIG),
+        triggers_fired=len(fired_ids),
+        fired_trigger_ids=fired_ids,
+        claims_created=claims_created,
+        payouts_created=payouts_created,
+        held_payouts=held_payouts,
+    )
+
+
 @app.get("/api/v1/admin/fraud/alerts", response_model=list[schemas.FraudAssessment])
 def list_fraud_alerts(
     limit: int = 25,

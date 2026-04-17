@@ -51,14 +51,93 @@ const ALL_ZONES = Object.entries(ZONE_META).map(([value, meta]) => ({
   label: `${value} — ${meta.city}`,
 }));
 
+type TriggerTypeOption = {
+  value: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  min: number;
+  max: number;
+  step: number;
+  defaultSeverity: number;
+  unitLabel: string;
+  lowLabel: string;
+  highLabel: string;
+};
+
 const TRIGGER_TYPES = [
-  { value: "HEAVY_RAIN",    label: "Heavy Rain",     icon: CloudRain },
-  { value: "EXTREME_HEAT",  label: "Extreme Heat",   icon: Thermometer },
-  { value: "AQI_SPIKE",     label: "AQI Spike",      icon: Wind },
-  { value: "FLASH_FLOOD",   label: "Flash Flood",    icon: Waves },
-  { value: "PANDEMIC",      label: "Pandemic",       icon: AlertTriangle },
-  { value: "ZONE_LOCKDOWN", label: "Zone Lockdown",  icon: Lock },
-];
+  {
+    value: "HEAVY_RAIN",
+    label: "Heavy Rain",
+    icon: CloudRain,
+    min: 50,
+    max: 140,
+    step: 1,
+    defaultSeverity: 80,
+    unitLabel: "mm/24h",
+    lowLabel: "below threshold",
+    highLabel: "extreme rain",
+  },
+  {
+    value: "EXTREME_HEAT",
+    label: "Extreme Heat",
+    icon: Thermometer,
+    min: 35,
+    max: 50,
+    step: 0.5,
+    defaultSeverity: 44,
+    unitLabel: "C",
+    lowLabel: "warm",
+    highLabel: "danger heat",
+  },
+  {
+    value: "AQI_SPIKE",
+    label: "AQI Spike",
+    icon: Wind,
+    min: 180,
+    max: 500,
+    step: 5,
+    defaultSeverity: 360,
+    unitLabel: "AQI",
+    lowLabel: "unhealthy",
+    highLabel: "hazardous",
+  },
+  {
+    value: "FLASH_FLOOD",
+    label: "Flash Flood",
+    icon: Waves,
+    min: 60,
+    max: 180,
+    step: 1,
+    defaultSeverity: 90,
+    unitLabel: "mm est",
+    lowLabel: "moderate flood",
+    highLabel: "severe flood",
+  },
+  {
+    value: "PANDEMIC",
+    label: "Pandemic",
+    icon: AlertTriangle,
+    min: 0.1,
+    max: 1,
+    step: 0.05,
+    defaultSeverity: 0.85,
+    unitLabel: "score",
+    lowLabel: "low signal",
+    highLabel: "high signal",
+  },
+  {
+    value: "ZONE_LOCKDOWN",
+    label: "Zone Lockdown",
+    icon: Lock,
+    min: 0.1,
+    max: 1,
+    step: 0.05,
+    defaultSeverity: 1,
+    unitLabel: "score",
+    lowLabel: "partial",
+    highLabel: "full lockdown",
+  },
+] satisfies TriggerTypeOption[];
 
 const DISRUPTION_OPTIONS = [
   { value: "NORMAL",        label: "Normal" },
@@ -158,6 +237,15 @@ type TriggerEvent = {
   timestamp: string;
 };
 
+type TriggerScanResponse = {
+  scanned_zones: number;
+  triggers_fired: number;
+  fired_trigger_ids: number[];
+  claims_created: number;
+  payouts_created: number;
+  held_payouts: number;
+};
+
 type Tab = "coverage" | "activity" | "admin";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -204,6 +292,7 @@ export default function Dashboard() {
   const [forecast, setForecast] = useState<ForecastData[]>([]);
   const [forecastUpdatedAt, setForecastUpdatedAt] = useState<string | null>(null);
   const forecastEtagRef = useRef<string | null>(null);
+  const [lastTriggerScan, setLastTriggerScan] = useState<TriggerScanResponse | null>(null);
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
@@ -213,7 +302,7 @@ export default function Dashboard() {
   // Admin trigger sim state
   const [simZone, setSimZone] = useState(zone);
   const [simType, setSimType] = useState("HEAVY_RAIN");
-  const [simSeverity, setSimSeverity] = useState(0.85);
+  const [simSeverity, setSimSeverity] = useState(80);
 
   // Admin seed demo state
   const [seedEmail, setSeedEmail] = useState("demo@giggity.dev");
@@ -254,6 +343,28 @@ export default function Dashboard() {
     }
     return res;
   }, []);
+
+  const selectedTrigger = TRIGGER_TYPES.find((item) => item.value === simType) ?? TRIGGER_TYPES[0];
+
+  useEffect(() => {
+    setSimSeverity(selectedTrigger.defaultSeverity);
+  }, [simType]);
+
+  const isPrimaryLocal = API_BASE.includes("localhost:8000") || API_BASE.includes("127.0.0.1:8000");
+
+  const authFetchWithLocalFallback = useCallback(
+    async (path: string, init: RequestInit = {}): Promise<Response> => {
+      const primaryUrl = `${API_BASE}${path}`;
+      const primaryRes = await authFetch(primaryUrl, init);
+
+      if (primaryRes.status !== 404 || isPrimaryLocal) {
+        return primaryRes;
+      }
+
+      return authFetch(`http://localhost:8000${path}`, init);
+    },
+    [authFetch, isPrimaryLocal]
+  );
 
   // ── Data fetchers ─────────────────────────────────────────────────────────────
   const fetchWorkerData = useCallback(async (ctx: string) => {
@@ -308,7 +419,7 @@ export default function Dashboard() {
       const [mR, tR, fraudR, forecastR] = await Promise.allSettled([
         authFetch(`${API_BASE}/api/v1/admin/metrics`),
         authFetch(`${API_BASE}/api/v1/admin/triggers`),
-        authFetch(`${API_BASE}/api/v1/admin/fraud/alerts`),
+        authFetchWithLocalFallback(`/api/v1/admin/fraud/alerts`),
         fetchForecast(),
       ]);
 
@@ -466,6 +577,37 @@ export default function Dashboard() {
       await fetchAdminData();
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Seed error.");
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleScanTriggersNow = async () => {
+    setLoadingAction("scan");
+    try {
+      const res = await authFetch(`${API_BASE}/api/v1/admin/triggers/scan-now`, {
+        method: "POST",
+      });
+      let response = res;
+      if (response.status === 404 && !isPrimaryLocal) {
+        response = await authFetchWithLocalFallback(`/api/v1/admin/triggers/scan-now`, {
+          method: "POST",
+        });
+      }
+      if (!response.ok) throw new Error("Trigger scan failed.");
+
+      const scan = (await response.json()) as TriggerScanResponse;
+      setLastTriggerScan(scan);
+
+      if (scan.triggers_fired > 0) {
+        showToast(`Scan complete: ${scan.triggers_fired} trigger(s) fired.`, "success");
+      } else {
+        showToast("Scan complete: no thresholds breached.", "success");
+      }
+
+      await Promise.all([fetchWorkerData(disruptionCtx), fetchAdminData()]);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Scan error.");
     } finally {
       setLoadingAction(null);
     }
@@ -902,9 +1044,51 @@ export default function Dashboard() {
             </div>
 
             {metrics && (
-              <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/40">
-                <span className={`w-2 h-2 ${metrics.scheduler_running ? "bg-emerald-500" : "bg-[#C0392B]"}`} />
-                Scheduler: {metrics.scheduler_running ? "Running" : "Stopped"}
+              <div className="flex flex-wrap items-center gap-4 font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/40">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 ${metrics.scheduler_running ? "bg-emerald-500" : "bg-[#C0392B]"}`} />
+                  Scheduler: {metrics.scheduler_running ? "Running" : "Stopped"}
+                </div>
+                <button
+                  onClick={handleScanTriggersNow}
+                  disabled={loadingAction === "scan"}
+                  className="px-3 py-1 border border-[#1A1A1A]/15 hover:border-[#C0392B] hover:text-[#C0392B] transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {loadingAction === "scan" ? "Scanning..." : "Scan now"}
+                </button>
+              </div>
+            )}
+
+            {lastTriggerScan && (
+              <div className="border border-[#1A1A1A]/10 bg-white p-4 grid grid-cols-2 md:grid-cols-6 gap-3 font-mono text-[9px] uppercase tracking-widest">
+                <div>
+                  <p className="text-[#1A1A1A]/40 mb-1">Zones scanned</p>
+                  <p className="font-bold text-[#1A1A1A]">{lastTriggerScan.scanned_zones}</p>
+                </div>
+                <div>
+                  <p className="text-[#1A1A1A]/40 mb-1">Triggers fired</p>
+                  <p className="font-bold text-[#C0392B]">{lastTriggerScan.triggers_fired}</p>
+                </div>
+                <div>
+                  <p className="text-[#1A1A1A]/40 mb-1">Claims created</p>
+                  <p className="font-bold text-[#1A1A1A]">{lastTriggerScan.claims_created}</p>
+                </div>
+                <div>
+                  <p className="text-[#1A1A1A]/40 mb-1">Payouts created</p>
+                  <p className="font-bold text-[#1A1A1A]">{lastTriggerScan.payouts_created}</p>
+                </div>
+                <div>
+                  <p className="text-[#1A1A1A]/40 mb-1">Held payouts</p>
+                  <p className="font-bold text-amber-700">{lastTriggerScan.held_payouts}</p>
+                </div>
+                <div>
+                  <p className="text-[#1A1A1A]/40 mb-1">Trigger IDs</p>
+                  <p className="font-bold text-[#1A1A1A]">
+                    {lastTriggerScan.fired_trigger_ids.length > 0
+                      ? lastTriggerScan.fired_trigger_ids.join(",")
+                      : "none"}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -986,19 +1170,19 @@ export default function Dashboard() {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                     <label className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/50">Severity</label>
-                    <span className="font-mono text-xs font-bold text-[#C0392B]">{(simSeverity * 100).toFixed(0)}%</span>
+                    <span className="font-mono text-xs font-bold text-[#C0392B]">{simSeverity.toFixed(selectedTrigger.step < 1 ? 2 : 0)} {selectedTrigger.unitLabel}</span>
                   </div>
                   <input
                     type="range"
-                    min={0.1}
-                    max={1}
-                    step={0.05}
+                    min={selectedTrigger.min}
+                    max={selectedTrigger.max}
+                    step={selectedTrigger.step}
                     value={simSeverity}
                     onChange={(e) => setSimSeverity(Number(e.target.value))}
                     className="w-full accent-[#C0392B] cursor-pointer"
                   />
                   <div className="flex justify-between font-mono text-[8px] text-[#1A1A1A]/30 uppercase">
-                    <span>Minor</span><span>Severe</span>
+                    <span>{selectedTrigger.lowLabel}</span><span>{selectedTrigger.highLabel}</span>
                   </div>
                 </div>
 

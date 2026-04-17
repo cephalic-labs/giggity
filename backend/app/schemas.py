@@ -102,6 +102,15 @@ class TriggerEvent(TriggerEventBase):
     class Config:
         from_attributes = True
 
+
+class TriggerScanResponse(BaseModel):
+    scanned_zones: int
+    triggers_fired: int
+    fired_trigger_ids: list[int] = Field(default_factory=list)
+    claims_created: int
+    payouts_created: int
+    held_payouts: int
+
 # --- Claim Schemas ---
 class ClaimBase(BaseModel):
     policy_id: int
