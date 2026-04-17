@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -187,6 +187,24 @@ def get_current_principal(
 models.Base.metadata.create_all(bind=engine)
 
 
+def _ensure_postgres_enum_values() -> None:
+    """Backfill enum values needed by fraud workflow on existing Postgres schemas."""
+    if not str(engine.url).startswith("postgresql"):
+        return
+
+    statements = [
+        "ALTER TYPE claimstatus ADD VALUE IF NOT EXISTS 'REVIEW'",
+        "ALTER TYPE payoutstatus ADD VALUE IF NOT EXISTS 'HELD'",
+    ]
+
+    with engine.begin() as conn:
+        for statement in statements:
+            try:
+                conn.execute(text(statement))
+            except Exception:
+                logger.exception("Failed enum migration statement: %s", statement)
+
+
 def _refresh_forecast_cache() -> None:
     try:
         forecast = generate_weekly_forecast()
@@ -214,6 +232,8 @@ def _read_forecast_cache() -> tuple[list[dict], str, str]:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    _ensure_postgres_enum_values()
+
     poll_minutes = int(os.getenv("TRIGGER_POLL_MINUTES", "5"))
     _refresh_forecast_cache()
 
@@ -676,35 +696,6 @@ def simulate_trigger(
 
     background_tasks.add_task(process_zero_touch_claims, new_event.id)
     return new_event
-
-
-def _fraud_assessment_to_schema(assessment: models.FraudAssessment) -> schemas.FraudAssessment:
-    trigger = (
-        db.query(models.TriggerEvent)
-        .filter(models.TriggerEvent.id == assessment.trigger_event_id)
-        .first()
-    )
-    claim = (
-        db.query(models.Claim)
-        .filter(models.Claim.id == assessment.claim_id)
-        .first()
-    )
-    if trigger is None or claim is None:
-        raise HTTPException(status_code=404, detail="Fraud assessment context missing")
-    return schemas.FraudAssessment(
-        id=assessment.id,
-        claim_id=assessment.claim_id,
-        trigger_event_id=assessment.trigger_event_id,
-        policy_id=assessment.policy_id,
-        worker_id=assessment.worker_id,
-        zone=assessment.zone,
-        score=assessment.score,
-        decision=assessment.decision,
-        reasons=decode_reasons(assessment.reasons),
-        trigger_type=trigger.trigger_type,
-        trigger_severity=trigger.severity,
-        created_at=assessment.created_at,
-    )
 
 
 @app.get("/api/v1/admin/triggers", response_model=list[schemas.TriggerEvent])
