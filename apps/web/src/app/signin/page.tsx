@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
@@ -16,6 +16,18 @@ export default function SigninPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const accessToken = window.localStorage.getItem("giggity_access_token");
+    const refreshToken = window.localStorage.getItem("giggity_refresh_token");
+    const workerId = window.localStorage.getItem("giggity_user_id");
+
+    if (accessToken && refreshToken && workerId) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

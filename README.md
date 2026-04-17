@@ -37,8 +37,11 @@ This repository currently documents what we are going to build and how the final
 
 ## Current Status
 
-- Product stage: pre-build
-- Purpose of this README: product definition + engineering blueprint
+- Product stage: prototype / MVP
+- Core services scaffolded with FastAPI
+- Basic worker onboarding and policy purchase flow implemented
+- Trigger simulation and claim lifecycle implemented
+- Payment flow simulated in sandbox mode
 
 As implementation begins, this document will evolve from blueprint to developer and operator documentation.
 

@@ -28,6 +28,7 @@ import {
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
+import InstallPrompt from "@/components/InstallPrompt";
 import {
   LiveWeatherForecastDashboard,
   type ForecastData,
@@ -156,12 +157,19 @@ const CLAIM_STATUS_CLASS: Record<string, string> = {
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const router = useRouter();
+  const [authState, setAuthState] = useState(() => {
+    return {
+      workerId: null as string | null,
+      workerName: "Worker",
+      zone: "ZONE_A",
+      role: "WORKER",
+      isAuthenticated: false,
+      isReady: false,
+    };
+  });
 
   // Auth / identity
-  const workerId = typeof window !== "undefined" ? localStorage.getItem("giggity_user_id") : null;
-  const workerName = typeof window !== "undefined" ? (localStorage.getItem("giggity_worker_name") ?? "Worker") : "Worker";
-  const zone = typeof window !== "undefined" ? (localStorage.getItem("giggity_zone") || "ZONE_A") : "ZONE_A";
-  const role = typeof window !== "undefined" ? (localStorage.getItem("giggity_role") ?? "WORKER") : "WORKER";
+  const { workerId, workerName, zone, role, isAuthenticated, isReady } = authState;
   const isAdmin = role === "ADMIN";
 
   // Tab state
@@ -187,6 +195,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Admin trigger sim state
   const [simZone, setSimZone] = useState(zone);
@@ -202,39 +211,105 @@ export default function Dashboard() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  const handleSessionExpired = useCallback(() => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("giggity_access_token");
+      localStorage.removeItem("giggity_refresh_token");
+      localStorage.removeItem("giggity_user_id");
+      localStorage.removeItem("giggity_role");
+      localStorage.removeItem("giggity_zone");
+      localStorage.removeItem("giggity_worker_name");
+    }
+    setSessionExpired(true);
+    setAuthState((current) => ({
+      ...current,
+      workerId: null,
+      workerName: "Worker",
+      zone: "ZONE_A",
+      role: "WORKER",
+      isAuthenticated: false,
+      isReady: true,
+    }));
+    router.replace("/signin");
+  }, [router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const accessToken = localStorage.getItem("giggity_access_token");
+    const refreshToken = localStorage.getItem("giggity_refresh_token");
+    const nextWorkerId = localStorage.getItem("giggity_user_id");
+    const nextWorkerName = localStorage.getItem("giggity_worker_name") ?? "Worker";
+    const nextZone = localStorage.getItem("giggity_zone") || "ZONE_A";
+    const nextRole = localStorage.getItem("giggity_role") ?? "WORKER";
+
+    setAuthState({
+      workerId: nextWorkerId,
+      workerName: nextWorkerName,
+      zone: nextZone,
+      role: nextRole,
+      isAuthenticated: Boolean(accessToken && refreshToken && nextWorkerId),
+      isReady: true,
+    });
+    setSimZone(nextZone);
+  }, []);
+
+  useEffect(() => {
+    if (isReady && (!isAuthenticated || sessionExpired)) {
+      router.replace("/signin");
+    }
+  }, [isAuthenticated, isReady, router, sessionExpired]);
+
   // ── Auth helpers ─────────────────────────────────────────────────────────────
-  const refreshToken = async (rt: string) => {
+  const refreshToken = useCallback(async (rt: string) => {
     const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: rt }),
     });
-    if (!res.ok) throw new Error("Session expired.");
+    if (!res.ok) {
+      handleSessionExpired();
+      throw new Error("Session expired.");
+    }
     const data = (await res.json()) as { access_token: string; refresh_token: string };
     localStorage.setItem("giggity_access_token", data.access_token);
     localStorage.setItem("giggity_refresh_token", data.refresh_token);
     return data.access_token;
-  };
+  }, [handleSessionExpired]);
 
   const authFetch = useCallback(async (url: string, init: RequestInit = {}): Promise<Response> => {
     const at = localStorage.getItem("giggity_access_token");
     const rt = localStorage.getItem("giggity_refresh_token");
-    if (!at || !rt) throw new Error("No session.");
+    if (!at || !rt) {
+      handleSessionExpired();
+      throw new Error("No session.");
+    }
 
     const withAuth = (token: string) =>
       fetch(url, { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` } });
 
-    let res = await withAuth(at);
-    if (res.status === 401) {
-      const newAt = await refreshToken(rt);
-      res = await withAuth(newAt);
+    try {
+      let res = await withAuth(at);
+      if (res.status === 401) {
+        const newAt = await refreshToken(rt);
+        res = await withAuth(newAt);
+      }
+      if (res.status === 401) {
+        handleSessionExpired();
+        throw new Error("Session expired.");
+      }
+      return res;
+    } catch (error) {
+      if (error instanceof Error && (error.message === "No session." || error.message === "Session expired.")) {
+        throw error;
+      }
+      throw error;
     }
-    return res;
-  }, []);
+  }, [handleSessionExpired, refreshToken]);
 
   // ── Data fetchers ─────────────────────────────────────────────────────────────
   const fetchWorkerData = useCallback(async (ctx: string) => {
-    if (!workerId) { router.push("/signin"); return; }
+    if (!workerId) { router.replace("/signin"); return; }
     try {
       const [qR, pR, cR, lcR, pmR, poR] = await Promise.all([
         authFetch(`${API_BASE}/api/v1/policy/quote?zone=${zone}&disruption_context=${ctx}`),
@@ -317,6 +392,8 @@ export default function Dashboard() {
   ctxRef.current = disruptionCtx;
 
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return;
+
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -354,12 +431,13 @@ export default function Dashboard() {
       window.removeEventListener("online", rerunNow);
       document.removeEventListener("visibilitychange", rerunNow);
     };
-  }, [fetchWorkerData, fetchAdminData, isAdmin]);
+  }, [fetchWorkerData, fetchAdminData, isAdmin, isAuthenticated, isReady]);
 
   // Re-fetch quote when disruption context changes
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return;
     if (!isLoading) fetchWorkerData(disruptionCtx);
-  }, [disruptionCtx]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [disruptionCtx, fetchWorkerData, isAuthenticated, isLoading, isReady]);
 
   // ── Actions ───────────────────────────────────────────────────────────────────
   const handleBuyPolicy = async () => {
@@ -454,6 +532,28 @@ export default function Dashboard() {
   const totalPaid = payouts.filter((p) => p.status === "RELEASED").reduce((s, p) => s + p.amount, 0);
 
   // ── Loading screen ─────────────────────────────────────────────────────────────
+  if (!isReady) {
+    return (
+      <div className="min-h-screen bg-[#F4F4F0] flex items-center justify-center">
+        <div className="font-mono text-[10px] uppercase tracking-widest flex items-center gap-3 text-[#1A1A1A]/50">
+          <Loader2 className="animate-spin" size={14} />
+          Syncing your coverage board...
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || sessionExpired) {
+    return (
+      <div className="min-h-screen bg-[#F4F4F0] flex items-center justify-center">
+        <div className="font-mono text-[10px] uppercase tracking-widest flex items-center gap-3 text-[#1A1A1A]/50">
+          <Loader2 className="animate-spin" size={14} />
+          Redirecting to sign in...
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#F4F4F0] flex items-center justify-center">
@@ -468,6 +568,7 @@ export default function Dashboard() {
   // ── Render ─────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#F4F4F0] text-[#1A1A1A] font-body pb-24">
+      <InstallPrompt />
 
       {/* ── Header ── */}
       <header className="bg-[#F4F4F0] border-b border-[#1A1A1A]/10 sticky top-0 z-40">
