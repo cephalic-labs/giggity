@@ -174,9 +174,9 @@ Cluster-level detection candidates:
 
 ## Adversarial Defense & Anti-Spoofing Strategy
 
-Crisis context: 
+Crisis context:
 
->Coordinated fraud rings using Telegram groups and GPS spoofing can drain a parametric liquidity pool if location is treated as a single source of truth.
+> Coordinated fraud rings using Telegram groups and GPS spoofing can drain a parametric liquidity pool if location is treated as a single source of truth.
 
 Solution approach:
 
@@ -502,17 +502,26 @@ Sample payload:
 
 1. Register or seed a worker.
 2. Fetch quote with pandemic context:
-  - `GET /api/v1/policy/quote?zone=ZONE_A&disruption_context=PANDEMIC`
+
+- `GET /api/v1/policy/quote?zone=ZONE_A&disruption_context=PANDEMIC`
+
 3. Run payment flow:
-  - `POST /api/v1/payments/checkout`
-  - `POST /api/v1/payments/confirm`
+
+- `POST /api/v1/payments/checkout`
+- `POST /api/v1/payments/confirm`
+
 4. Verify active policy:
-  - `GET /api/v1/policy/active/{user_id}`
+
+- `GET /api/v1/policy/active/{user_id}`
+
 5. Simulate pandemic trigger:
-  - `POST /api/v1/admin/triggers` with `trigger_type=PANDEMIC`
+
+- `POST /api/v1/admin/triggers` with `trigger_type=PANDEMIC`
+
 6. Verify lifecycle and payouts:
-  - `GET /api/v1/claims/lifecycle/{user_id}`
-  - `GET /api/v1/payouts/{user_id}`
+
+- `GET /api/v1/claims/lifecycle/{user_id}`
+- `GET /api/v1/payouts/{user_id}`
 
 ### Current MVP API Additions
 

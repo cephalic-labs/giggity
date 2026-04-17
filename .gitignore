@@ -1,8 +1,59 @@
-# Root .env (contains secrets — never commit)
-.env
-
-# OS / editor
+# OS / Editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+
+# Node / Next.js / React Native
+node_modules/
+.next/
+out/
+build/
+dist/
+web-build/
+.expo/
+expo-env.d.ts
+.metro-health-check*
+app-example/
+/ios
+/android
+
+# Python / ML
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+*.egg-info/
+.pytest_cache/
+*.joblib
+*.csv
+*.pt
+*.pth
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Debug / Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Typescript
+*.tsbuildinfo
+
+# Native Mobile Secrets / Keys
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
