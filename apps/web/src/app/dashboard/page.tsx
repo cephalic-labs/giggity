@@ -118,6 +118,9 @@ type ClaimLifecycleEvent = {
   claim_status: string;
   payout_status: string | null;
   payout_amount: number | null;
+  fraud_score?: number | null;
+  fraud_decision?: string | null;
+  fraud_reasons: string[];
   created_at: string;
 };
 
@@ -741,51 +744,66 @@ export default function Dashboard() {
                 ) : (
                   lifecycle.map((ev) => (
                     <div key={`${ev.claim_id}-${ev.trigger_type}`} className="border border-[#1A1A1A]/5 p-5 space-y-3">
+                      {(() => {
+                        const triggerType = typeof ev.trigger_type === "string" ? ev.trigger_type : "UNKNOWN_TRIGGER";
+                        const claimStatus = typeof ev.claim_status === "string" ? ev.claim_status : "PENDING";
+                        const payoutStatus = typeof ev.payout_status === "string" ? ev.payout_status : null;
+                        const payoutAmount = typeof ev.payout_amount === "number" ? ev.payout_amount : null;
+                        const fraudDecision = typeof ev.fraud_decision === "string" ? ev.fraud_decision : null;
+                        const fraudScore = typeof ev.fraud_score === "number" ? ev.fraud_score : null;
+                        const fraudReasons = Array.isArray(ev.fraud_reasons)
+                          ? ev.fraud_reasons.filter((reason): reason is string => typeof reason === "string")
+                          : [];
+                        return (
+                          <>
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/40 mb-1">
                             Claim #{ev.claim_id} · {fmtDate(ev.created_at)}
                           </p>
-                          <h4 className="font-serif italic font-bold">{ev.trigger_type.replace(/_/g, " ")}</h4>
+                          <h4 className="font-serif italic font-bold">{triggerType.replace(/_/g, " ")}</h4>
                           <p className="font-mono text-[9px] text-[#1A1A1A]/40 mt-1">
                             Severity {(ev.trigger_severity * 100).toFixed(0)}%
                           </p>
-                          {(ev.fraud_decision || ev.fraud_score != null) && (
+                          {(fraudDecision || fraudScore != null) && (
                             <div className="mt-3 flex flex-wrap items-center gap-2">
-                              <span className={`px-2 py-1 text-[8px] font-bold uppercase tracking-widest ${ev.fraud_decision === "CLEAR" ? "bg-emerald-100 text-emerald-700" : ev.fraud_decision === "REVIEW" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
-                                Fraud {ev.fraud_decision ?? "—"}
+                              <span className={`px-2 py-1 text-[8px] font-bold uppercase tracking-widest ${fraudDecision === "CLEAR" ? "bg-emerald-100 text-emerald-700" : fraudDecision === "REVIEW" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                                Fraud {fraudDecision ?? "—"}
                               </span>
-                              {ev.fraud_score != null && (
+                              {fraudScore != null && (
                                 <span className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/45">
-                                  score {(ev.fraud_score * 100).toFixed(0)}%
+                                  score {(fraudScore * 100).toFixed(0)}%
                                 </span>
                               )}
                             </div>
                           )}
                         </div>
                         <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-1 ${
-                          CLAIM_STATUS_CLASS[ev.claim_status] ?? "bg-[#1A1A1A]/5"
+                          CLAIM_STATUS_CLASS[claimStatus] ?? "bg-[#1A1A1A]/5"
                         }`}>
-                          {ev.claim_status}
+                          {claimStatus}
                         </span>
                       </div>
-                      {ev.payout_amount && (
+                      {payoutAmount != null && (
                         <div className="flex justify-between items-center pt-3 border-t border-[#1A1A1A]/5">
                           <span className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/40">
-                            Payout: {ev.payout_status}
+                            Payout: {payoutStatus ?? "N/A"}
                           </span>
                           <span className="font-serif font-black text-lg text-[#C0392B]">
-                            ₹{fmt(ev.payout_amount)}
+                            ₹{fmt(payoutAmount)}
                           </span>
                         </div>
                       )}
-                      {ev.fraud_reasons.length > 0 && (
+                      {fraudReasons.length > 0 && (
                         <div className="pt-3 border-t border-[#1A1A1A]/5 font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/45 flex flex-wrap gap-2">
-                          {ev.fraud_reasons.map((reason) => (
+                          {fraudReasons.map((reason) => (
                             <span key={reason} className="px-2 py-1 bg-[#F4F4F0] border border-[#1A1A1A]/5">{reason.replace(/_/g, " ")}</span>
                           ))}
                         </div>
                       )}
+                          </>
+                        );
+                      })()}
                     </div>
                   ))
                 )}
@@ -905,7 +923,7 @@ export default function Dashboard() {
                       <span className="text-[#1A1A1A]/50">Claim #{alert.claim_id}</span>
                       <span className="text-[#1A1A1A]/50">{alert.zone}</span>
                       <span className="text-[#1A1A1A]/50">score {(alert.score * 100).toFixed(0)}%</span>
-                      <span className="text-[#1A1A1A]/35">{alert.reasons.join(", ")}</span>
+                      <span className="text-[#1A1A1A]/35">{(Array.isArray(alert.reasons) ? alert.reasons : []).join(", ")}</span>
                     </div>
                   ))}
                 </div>
