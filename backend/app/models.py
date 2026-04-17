@@ -10,6 +10,7 @@ class PolicyStatus(enum.Enum):
 
 class ClaimStatus(enum.Enum):
     APPROVED = "APPROVED"
+    REVIEW = "REVIEW"
     PAID = "PAID"
     DENIED = "DENIED"
 
@@ -28,8 +29,15 @@ class PaymentStatus(enum.Enum):
 
 class PayoutStatus(enum.Enum):
     INITIATED = "INITIATED"
+    HELD = "HELD"
     RELEASED = "RELEASED"
     FAILED = "FAILED"
+
+class FraudDecision(enum.Enum):
+    CLEAR = "CLEAR"
+    REVIEW = "REVIEW"
+    HOLD = "HOLD"
+    DENY = "DENY"
 
 class UserRole(enum.Enum):
     WORKER = "WORKER"
@@ -87,6 +95,7 @@ class Claim(Base):
     policy = relationship("Policy", back_populates="claims")
     trigger_event = relationship("TriggerEvent")
     payouts = relationship("PayoutLedger", back_populates="claim")
+    fraud_assessment = relationship("FraudAssessment", back_populates="claim", uselist=False)
 
 class PaymentTransaction(Base):
     __tablename__ = "payment_transactions"
@@ -119,6 +128,22 @@ class PayoutLedger(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     claim = relationship("Claim", back_populates="payouts")
+
+class FraudAssessment(Base):
+    __tablename__ = "fraud_assessments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    claim_id = Column(Integer, ForeignKey("claims.id"), unique=True, nullable=False)
+    trigger_event_id = Column(Integer, ForeignKey("trigger_events.id"), nullable=False)
+    policy_id = Column(Integer, ForeignKey("policies.id"), nullable=False)
+    worker_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    zone = Column(String, index=True)
+    score = Column(Float, nullable=False)
+    decision = Column(SQLEnum(FraudDecision), nullable=False)
+    reasons = Column(String, nullable=False, default="[]")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    claim = relationship("Claim", back_populates="fraud_assessment")
 
 class AuthCredential(Base):
     __tablename__ = "auth_credentials"

@@ -7,6 +7,7 @@ from .models import (
     TriggerType,
     PaymentStatus,
     PayoutStatus,
+    FraudDecision,
     UserRole,
 )
 
@@ -122,7 +123,27 @@ class ClaimLifecycleEvent(BaseModel):
     claim_status: ClaimStatus
     payout_status: Optional[PayoutStatus] = None
     payout_amount: Optional[float] = None
+    fraud_score: Optional[float] = None
+    fraud_decision: Optional[FraudDecision] = None
+    fraud_reasons: list[str] = Field(default_factory=list)
     created_at: datetime
+
+class FraudAssessment(BaseModel):
+    id: int
+    claim_id: int
+    trigger_event_id: int
+    policy_id: int
+    worker_id: int
+    zone: str
+    score: float
+    decision: FraudDecision
+    reasons: list[str] = Field(default_factory=list)
+    trigger_type: TriggerType
+    trigger_severity: float
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 # --- Payments Schemas ---
 class CheckoutCreate(BaseModel):

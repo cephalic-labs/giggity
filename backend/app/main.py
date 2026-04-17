@@ -22,6 +22,7 @@ from .database import engine, Base, get_db, SessionLocal
 from .services.risk_engine import predict_premium, ZONE_FEATURES
 from .services.trigger_service import ZONE_CONFIG, auto_check_all_zones
 from .services.claims_service import process_zero_touch_claims
+from .services.fraud_service import decode_reasons
 from app.services.forecast_service import generate_weekly_forecast
 
 logger = logging.getLogger(__name__)
@@ -677,6 +678,35 @@ def simulate_trigger(
     return new_event
 
 
+def _fraud_assessment_to_schema(assessment: models.FraudAssessment) -> schemas.FraudAssessment:
+    trigger = (
+        db.query(models.TriggerEvent)
+        .filter(models.TriggerEvent.id == assessment.trigger_event_id)
+        .first()
+    )
+    claim = (
+        db.query(models.Claim)
+        .filter(models.Claim.id == assessment.claim_id)
+        .first()
+    )
+    if trigger is None or claim is None:
+        raise HTTPException(status_code=404, detail="Fraud assessment context missing")
+    return schemas.FraudAssessment(
+        id=assessment.id,
+        claim_id=assessment.claim_id,
+        trigger_event_id=assessment.trigger_event_id,
+        policy_id=assessment.policy_id,
+        worker_id=assessment.worker_id,
+        zone=assessment.zone,
+        score=assessment.score,
+        decision=assessment.decision,
+        reasons=decode_reasons(assessment.reasons),
+        trigger_type=trigger.trigger_type,
+        trigger_severity=trigger.severity,
+        created_at=assessment.created_at,
+    )
+
+
 @app.get("/api/v1/admin/triggers", response_model=list[schemas.TriggerEvent])
 def list_trigger_events(
     limit: int = 50,
@@ -691,6 +721,48 @@ def list_trigger_events(
         .limit(limit)
         .all()
     )
+
+
+@app.get("/api/v1/admin/fraud/alerts", response_model=list[schemas.FraudAssessment])
+def list_fraud_alerts(
+    limit: int = 25,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(get_current_principal),
+):
+    _require_admin(principal)
+    assessments = (
+        db.query(models.FraudAssessment)
+        .filter(models.FraudAssessment.decision != models.FraudDecision.CLEAR)
+        .order_by(desc(models.FraudAssessment.created_at))
+        .limit(limit)
+        .all()
+    )
+    result: list[schemas.FraudAssessment] = []
+    for assessment in assessments:
+        trigger = (
+            db.query(models.TriggerEvent)
+            .filter(models.TriggerEvent.id == assessment.trigger_event_id)
+            .first()
+        )
+        if trigger is None:
+            continue
+        result.append(
+            schemas.FraudAssessment(
+                id=assessment.id,
+                claim_id=assessment.claim_id,
+                trigger_event_id=assessment.trigger_event_id,
+                policy_id=assessment.policy_id,
+                worker_id=assessment.worker_id,
+                zone=assessment.zone,
+                score=assessment.score,
+                decision=assessment.decision,
+                reasons=decode_reasons(assessment.reasons),
+                trigger_type=trigger.trigger_type,
+                trigger_severity=trigger.severity,
+                created_at=assessment.created_at,
+            )
+        )
+    return result
 
 @app.get("/api/v1/claims/{user_id}", response_model=list[schemas.Claim])
 def get_user_claims(
@@ -739,6 +811,11 @@ def get_claim_lifecycle(
             .order_by(desc(models.PayoutLedger.created_at))
             .first()
         )
+        fraud_assessment = (
+            db.query(models.FraudAssessment)
+            .filter(models.FraudAssessment.claim_id == claim.id)
+            .first()
+        )
 
         if trigger is None:
             continue
@@ -751,6 +828,9 @@ def get_claim_lifecycle(
                 claim_status=claim.status,
                 payout_status=payout.status if payout else None,
                 payout_amount=payout.amount if payout else None,
+                fraud_score=fraud_assessment.score if fraud_assessment else None,
+                fraud_decision=fraud_assessment.decision if fraud_assessment else None,
+                fraud_reasons=decode_reasons(fraud_assessment.reasons) if fraud_assessment else [],
                 created_at=claim.created_at,
             )
         )

@@ -32,6 +32,7 @@ import {
   LiveWeatherForecastDashboard,
   type ForecastData,
 } from "@/components/dashboard/LiveWeatherForecastDashboard";
+import { MvpJourneyStepper } from "@/components/dashboard/MvpJourneyStepper";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:8000";
 
@@ -95,6 +96,21 @@ type Claim = {
   created_at: string;
 };
 
+type FraudAlert = {
+  id: number;
+  claim_id: number;
+  trigger_event_id: number;
+  policy_id: number;
+  worker_id: number;
+  zone: string;
+  score: number;
+  decision: string;
+  reasons: string[];
+  trigger_type: string;
+  trigger_severity: number;
+  created_at: string;
+};
+
 type ClaimLifecycleEvent = {
   claim_id: number;
   trigger_type: string;
@@ -148,9 +164,11 @@ const fmtDate = (s: string) =>
 
 const CLAIM_STATUS_CLASS: Record<string, string> = {
   APPROVED: "bg-emerald-100 text-emerald-700",
+  REVIEW: "bg-amber-100 text-amber-700",
   PAID: "bg-emerald-100 text-emerald-700",
   PENDING: "bg-amber-100 text-amber-700",
   REJECTED: "bg-red-100 text-red-700",
+  DENIED: "bg-red-100 text-red-700",
 };
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -179,6 +197,7 @@ export default function Dashboard() {
   // Admin data
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [triggers, setTriggers] = useState<TriggerEvent[]>([]);
+  const [fraudAlerts, setFraudAlerts] = useState<FraudAlert[]>([]);
   const [forecast, setForecast] = useState<ForecastData[]>([]);
   const [forecastUpdatedAt, setForecastUpdatedAt] = useState<string | null>(null);
   const forecastEtagRef = useRef<string | null>(null);
@@ -196,6 +215,7 @@ export default function Dashboard() {
   // Admin seed demo state
   const [seedEmail, setSeedEmail] = useState("demo@giggity.dev");
   const [seedPassword, setSeedPassword] = useState("Demo@1234");
+  const hasSession = typeof window !== "undefined" && Boolean(localStorage.getItem("giggity_access_token"));
 
   const showToast = (msg: string, type: "error" | "success" = "error") => {
     setToast({ msg, type });
@@ -282,9 +302,10 @@ export default function Dashboard() {
         return primary;
       };
 
-      const [mR, tR, fR] = await Promise.allSettled([
+      const [mR, tR, fraudR, forecastR] = await Promise.allSettled([
         authFetch(`${API_BASE}/api/v1/admin/metrics`),
         authFetch(`${API_BASE}/api/v1/admin/triggers`),
+        authFetch(`${API_BASE}/api/v1/admin/fraud/alerts`),
         fetchForecast(),
       ]);
 
@@ -296,15 +317,19 @@ export default function Dashboard() {
         setTriggers(await tR.value.json());
       }
 
-      if (fR.status === "fulfilled") {
-        const etag = fR.value.headers.get("etag");
+      if (fraudR.status === "fulfilled" && fraudR.value.ok) {
+        setFraudAlerts(await fraudR.value.json());
+      }
+
+      if (forecastR.status === "fulfilled") {
+        const etag = forecastR.value.headers.get("etag");
         if (etag) forecastEtagRef.current = etag;
 
-        const updatedAt = fR.value.headers.get("x-forecast-updated-at");
+        const updatedAt = forecastR.value.headers.get("x-forecast-updated-at");
         if (updatedAt) setForecastUpdatedAt(updatedAt);
 
-        if (fR.value.ok) {
-          setForecast(await fR.value.json());
+        if (forecastR.value.ok) {
+          setForecast(await forecastR.value.json());
         }
       }
     } catch {
@@ -452,6 +477,10 @@ export default function Dashboard() {
   const hasActivePolicy = policies.some((p) => p.status === "ACTIVE");
   const zoneMeta = ZONE_META[zone] ?? { city: zone, neighbourhood: "" };
   const totalPaid = payouts.filter((p) => p.status === "RELEASED").reduce((s, p) => s + p.amount, 0);
+  const hasTriggerActivity = triggers.length > 0;
+  const hasClaimActivity = claims.length > 0 || lifecycle.length > 0;
+  const hasPayoutActivity = payouts.length > 0;
+  const highFraudAlerts = fraudAlerts.filter((alert) => alert.decision !== "CLEAR");
 
   // ── Loading screen ─────────────────────────────────────────────────────────────
   if (isLoading) {
@@ -530,6 +559,16 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-[1200px] mx-auto px-6 md:px-12 mt-10">
+        <div className="mb-6">
+          <MvpJourneyStepper
+            hasSession={hasSession}
+            hasQuote={Boolean(quote)}
+            hasActivePolicy={hasActivePolicy}
+            hasTriggerActivity={hasTriggerActivity}
+            hasClaimActivity={hasClaimActivity}
+            hasPayoutActivity={hasPayoutActivity}
+          />
+        </div>
 
         {/* ════════════════════ COVERAGE TAB ════════════════════ */}
         {activeTab === "coverage" && (
@@ -711,6 +750,18 @@ export default function Dashboard() {
                           <p className="font-mono text-[9px] text-[#1A1A1A]/40 mt-1">
                             Severity {(ev.trigger_severity * 100).toFixed(0)}%
                           </p>
+                          {(ev.fraud_decision || ev.fraud_score != null) && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <span className={`px-2 py-1 text-[8px] font-bold uppercase tracking-widest ${ev.fraud_decision === "CLEAR" ? "bg-emerald-100 text-emerald-700" : ev.fraud_decision === "REVIEW" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                                Fraud {ev.fraud_decision ?? "—"}
+                              </span>
+                              {ev.fraud_score != null && (
+                                <span className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/45">
+                                  score {(ev.fraud_score * 100).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-1 ${
                           CLAIM_STATUS_CLASS[ev.claim_status] ?? "bg-[#1A1A1A]/5"
@@ -726,6 +777,13 @@ export default function Dashboard() {
                           <span className="font-serif font-black text-lg text-[#C0392B]">
                             ₹{fmt(ev.payout_amount)}
                           </span>
+                        </div>
+                      )}
+                      {ev.fraud_reasons.length > 0 && (
+                        <div className="pt-3 border-t border-[#1A1A1A]/5 font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/45 flex flex-wrap gap-2">
+                          {ev.fraud_reasons.map((reason) => (
+                            <span key={reason} className="px-2 py-1 bg-[#F4F4F0] border border-[#1A1A1A]/5">{reason.replace(/_/g, " ")}</span>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -829,6 +887,28 @@ export default function Dashboard() {
               <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/40">
                 <span className={`w-2 h-2 ${metrics.scheduler_running ? "bg-emerald-500" : "bg-[#C0392B]"}`} />
                 Scheduler: {metrics.scheduler_running ? "Running" : "Stopped"}
+              </div>
+            )}
+
+            {highFraudAlerts.length > 0 && (
+              <div className="border border-[#C0392B]/20 bg-[#C0392B]/5 p-4 space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[#C0392B] font-bold">Fraud alerts</p>
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/45">{highFraudAlerts.length} non-clear assessments</span>
+                </div>
+                <div className="space-y-2 max-h-36 overflow-y-auto">
+                  {highFraudAlerts.slice(0, 5).map((alert) => (
+                    <div key={alert.id} className="flex flex-wrap items-center gap-3 border border-[#1A1A1A]/5 bg-white px-3 py-2 text-[10px] font-mono uppercase tracking-widest">
+                      <span className={`px-2 py-1 ${alert.decision === "REVIEW" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                        {alert.decision}
+                      </span>
+                      <span className="text-[#1A1A1A]/50">Claim #{alert.claim_id}</span>
+                      <span className="text-[#1A1A1A]/50">{alert.zone}</span>
+                      <span className="text-[#1A1A1A]/50">score {(alert.score * 100).toFixed(0)}%</span>
+                      <span className="text-[#1A1A1A]/35">{alert.reasons.join(", ")}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

@@ -9,6 +9,7 @@ import uuid
 import logging
 from .. import models
 from ..database import SessionLocal
+from .fraud_service import assess_claim_fraud, encode_reasons
 
 logger = logging.getLogger(__name__)
 
@@ -83,25 +84,67 @@ def process_zero_touch_claims(trigger_event_id: int) -> None:
 
         for policy in active_policies:
             payout_amount = round(policy.cover_amount * payout_ratio, 2)
+            worker = (
+                db.query(models.User)
+                .filter(models.User.id == policy.worker_id)
+                .first()
+            )
+            if worker is None:
+                logger.warning("Policy %d has no worker — skipping.", policy.id)
+                continue
+
+            fraud = assess_claim_fraud(
+                db,
+                worker=worker,
+                policy=policy,
+                trigger_event=trigger_event,
+                payout_amount=payout_amount,
+            )
+
+            if fraud.decision == models.FraudDecision.DENY:
+                claim_status = models.ClaimStatus.DENIED
+                payout_status = None
+                claim_amount = 0.0
+            elif fraud.decision in (models.FraudDecision.REVIEW, models.FraudDecision.HOLD):
+                claim_status = models.ClaimStatus.REVIEW
+                payout_status = models.PayoutStatus.HELD
+                claim_amount = payout_amount
+            else:
+                claim_status = models.ClaimStatus.APPROVED
+                payout_status = models.PayoutStatus.INITIATED
+                claim_amount = payout_amount
 
             claim = models.Claim(
                 policy_id=policy.id,
                 trigger_event_id=trigger_event.id,
-                amount=payout_amount,
-                status=models.ClaimStatus.APPROVED,
+                amount=claim_amount,
+                status=claim_status,
             )
             db.add(claim)
             db.flush()
 
-            payout = models.PayoutLedger(
+            assessment = models.FraudAssessment(
                 claim_id=claim.id,
+                trigger_event_id=trigger_event.id,
                 policy_id=policy.id,
                 worker_id=policy.worker_id,
-                amount=payout_amount,
-                status=models.PayoutStatus.INITIATED,
-                provider_ref=f"po_{uuid.uuid4().hex[:16]}",
+                zone=policy.zone,
+                score=fraud.score,
+                decision=fraud.decision,
+                reasons=encode_reasons(fraud.reasons),
             )
-            db.add(payout)
+            db.add(assessment)
+
+            if payout_status is not None:
+                payout = models.PayoutLedger(
+                    claim_id=claim.id,
+                    policy_id=policy.id,
+                    worker_id=policy.worker_id,
+                    amount=payout_amount,
+                    status=payout_status,
+                    provider_ref=f"po_{uuid.uuid4().hex[:16]}",
+                )
+                db.add(payout)
 
         # Commit initiated stage for explicit lifecycle visibility
         db.commit()
