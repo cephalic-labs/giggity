@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: deps
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend/app
+          target: /app/app
+        - action: rebuild
+          path: ./backend/pyproject.toml
+
+  frontend:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: deps
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    command: pnpm dev
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web/src
+          target: /app/src
+        - action: rebuild
+          path: ./apps/web/package.json

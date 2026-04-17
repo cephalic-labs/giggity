@@ -51,20 +51,20 @@ const ALL_ZONES = Object.entries(ZONE_META).map(([value, meta]) => ({
 }));
 
 const TRIGGER_TYPES = [
-  { value: "HEAVY_RAIN",    label: "Heavy Rain",     icon: CloudRain },
-  { value: "EXTREME_HEAT",  label: "Extreme Heat",   icon: Thermometer },
-  { value: "AQI_SPIKE",     label: "AQI Spike",      icon: Wind },
-  { value: "FLASH_FLOOD",   label: "Flash Flood",    icon: Waves },
-  { value: "PANDEMIC",      label: "Pandemic",       icon: AlertTriangle },
-  { value: "ZONE_LOCKDOWN", label: "Zone Lockdown",  icon: Lock },
+  { value: "HEAVY_RAIN", label: "Heavy Rain", icon: CloudRain },
+  { value: "EXTREME_HEAT", label: "Extreme Heat", icon: Thermometer },
+  { value: "AQI_SPIKE", label: "AQI Spike", icon: Wind },
+  { value: "FLASH_FLOOD", label: "Flash Flood", icon: Waves },
+  { value: "PANDEMIC", label: "Pandemic", icon: AlertTriangle },
+  { value: "ZONE_LOCKDOWN", label: "Zone Lockdown", icon: Lock },
 ];
 
 const DISRUPTION_OPTIONS = [
-  { value: "NORMAL",        label: "Normal" },
-  { value: "HEAVY_RAIN",    label: "Heavy Rain" },
-  { value: "EXTREME_HEAT",  label: "Extreme Heat" },
-  { value: "AQI_SPIKE",     label: "AQI Spike" },
-  { value: "PANDEMIC",      label: "Pandemic" },
+  { value: "NORMAL", label: "Normal" },
+  { value: "HEAVY_RAIN", label: "Heavy Rain" },
+  { value: "EXTREME_HEAT", label: "Extreme Heat" },
+  { value: "AQI_SPIKE", label: "AQI Spike" },
+  { value: "PANDEMIC", label: "Pandemic" },
   { value: "ZONE_LOCKDOWN", label: "Zone Lockdown" },
 ];
 
@@ -514,11 +514,10 @@ export default function Dashboard() {
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex items-center gap-2 px-5 py-3 font-mono text-[10px] uppercase tracking-widest border-b-2 transition-colors cursor-pointer ${
-                    activeTab === tab
+                  className={`flex items-center gap-2 px-5 py-3 font-mono text-[10px] uppercase tracking-widest border-b-2 transition-colors cursor-pointer ${activeTab === tab
                       ? "border-[#C0392B] text-[#C0392B]"
                       : "border-transparent text-[#1A1A1A]/40 hover:text-[#1A1A1A]"
-                  }`}
+                    }`}
                 >
                   {icons[tab]}
                   {labels[tab]}
@@ -554,11 +553,10 @@ export default function Dashboard() {
               <div className="w-px h-8 bg-[#1A1A1A]/10" />
               <div>
                 <p className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/40 mb-1">Risk Tier</p>
-                <p className={`font-mono text-xs uppercase tracking-widest font-bold ${
-                  quote?.risk_level === "High" ? "text-[#C0392B]"
-                  : quote?.risk_level === "Medium" ? "text-amber-600"
-                  : "text-emerald-600"
-                }`}>{quote?.risk_level ?? "—"}</p>
+                <p className={`font-mono text-xs uppercase tracking-widest font-bold ${quote?.risk_level === "High" ? "text-[#C0392B]"
+                    : quote?.risk_level === "Medium" ? "text-amber-600"
+                      : "text-emerald-600"
+                  }`}>{quote?.risk_level ?? "—"}</p>
               </div>
               <div className="ml-auto">
                 {hasActivePolicy
@@ -649,9 +647,8 @@ export default function Dashboard() {
                     <div key={p.id} className="border border-[#1A1A1A]/5 p-4 space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="font-mono text-[9px] uppercase tracking-widest text-[#1A1A1A]/40">Policy #{p.id}</span>
-                        <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 ${
-                          p.status === "ACTIVE" ? "bg-emerald-100 text-emerald-700" : "bg-[#1A1A1A]/5"
-                        }`}>{p.status}</span>
+                        <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 ${p.status === "ACTIVE" ? "bg-emerald-100 text-emerald-700" : "bg-[#1A1A1A]/5"
+                          }`}>{p.status}</span>
                       </div>
                       <div className="flex justify-between font-mono text-xs">
                         <span>Premium <strong>₹{fmt(p.premium_amount)}</strong></span>
@@ -712,9 +709,8 @@ export default function Dashboard() {
                             Severity {(ev.trigger_severity * 100).toFixed(0)}%
                           </p>
                         </div>
-                        <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-1 ${
-                          CLAIM_STATUS_CLASS[ev.claim_status] ?? "bg-[#1A1A1A]/5"
-                        }`}>
+                        <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-1 ${CLAIM_STATUS_CLASS[ev.claim_status] ?? "bg-[#1A1A1A]/5"
+                          }`}>
                           {ev.claim_status}
                         </span>
                       </div>
@@ -870,11 +866,10 @@ export default function Dashboard() {
                         <button
                           key={t.value}
                           onClick={() => setSimType(t.value)}
-                          className={`flex items-center gap-2 px-3 py-2.5 border font-mono text-[9px] uppercase tracking-widest transition-colors cursor-pointer ${
-                            simType === t.value
+                          className={`flex items-center gap-2 px-3 py-2.5 border font-mono text-[9px] uppercase tracking-widest transition-colors cursor-pointer ${simType === t.value
                               ? "border-[#C0392B] bg-[#C0392B] text-white"
                               : "border-[#1A1A1A]/10 hover:border-[#1A1A1A]/30"
-                          }`}
+                            }`}
                         >
                           <Icon size={12} />
                           {t.label}
@@ -967,9 +962,9 @@ export default function Dashboard() {
                     {triggers.length === 0 ? (
                       <p className="text-xs text-[#1A1A1A]/40 italic py-4 text-center">No triggers fired yet.</p>
                     ) : (
-                      [...triggers].reverse().map((t) => (
+                      [...triggers].reverse().map((t, index) => (
                         <div key={t.id} className="flex items-center gap-3 font-mono text-[10px] border-b border-[#1A1A1A]/5 pb-2">
-                          <span className="text-[#1A1A1A]/30 w-6 shrink-0">#{t.id}</span>
+                          <span className="text-[#1A1A1A]/30 w-6 shrink-0">#{index + 1}</span>
                           <span className="font-bold w-20 shrink-0 text-[9px] uppercase">{t.zone.replace("_", " ")}</span>
                           <span className="flex-1 text-[9px] uppercase tracking-widest">{t.trigger_type.replace(/_/g, " ")}</span>
                           <span className={`text-[9px] font-bold ${t.severity >= 0.8 ? "text-[#C0392B]" : "text-amber-600"}`}>
@@ -996,11 +991,10 @@ export default function Dashboard() {
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
-            className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 border ${
-              toast.type === "success"
+            className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 border ${toast.type === "success"
                 ? "bg-emerald-50 border-emerald-300 text-emerald-800"
                 : "bg-[#C0392B] border-[#C0392B] text-white"
-            }`}
+              }`}
           >
             <span className="font-mono text-[10px] uppercase tracking-widest">{toast.msg}</span>
             <button
